@@ -8,13 +8,13 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.util.Optional;
-import java.util.Random;
 
 @Slf4j
 @Service
 public class UrlService {
-    private static final Random random = new Random();
+    private static final SecureRandom random = new SecureRandom();
 
     private final UrlRepository urlRepository;
     private final ShortenerProperties properties;
@@ -34,8 +34,9 @@ public class UrlService {
      * @return UrlMapping containing the generated short code and original URL
      * @throws ShortCodeGenerationException if unable to generate unique code after max retries
      */
-    @Transactional
     public UrlMapping shortenUrl(String longUrl) {
+        DataIntegrityViolationException lastException = null;
+
         for (int attempt = 0; attempt < properties.maxRetries(); attempt++) {
             try {
                 String shortCode = generateShortCode();
@@ -44,17 +45,20 @@ public class UrlService {
                 UrlMapping mapping = new UrlMapping(longUrl, shortCode);
                 return urlRepository.save(mapping);
             } catch (DataIntegrityViolationException e) {
+                lastException = e;
                 log.debug("Short code collision detected on attempt {}", attempt + 1);
                 if (attempt == properties.maxRetries() - 1) {
                     log.error("Failed to generate unique short code after {} attempts", properties.maxRetries());
                     throw new ShortCodeGenerationException(
-                        "Failed to generate unique short code after " + properties.maxRetries() + " attempts"
+                        "Failed to generate unique short code after " + properties.maxRetries() + " attempts",
+                        lastException
                     );
                 }
             }
         }
         throw new ShortCodeGenerationException("Unexpected error in shortenUrl");
     }
+
 
     private String generateShortCode() {
         String alphabet = properties.alphabet();
