@@ -80,18 +80,14 @@ mvn clean install
 Start the Spring Boot application:
 
 ```bash
-mvn spring-boot:run
+./mvnw spring-boot:run
 
 ```
 ### Core API Endpoints
 
-* **Create Short Link:** `POST /api/shorten` — Generates a new short code for a given long URL.
-* **Redirection:** `GET /{code}` — Resolves the short code and redirects the client to the target URL.
-* **Get Analytics:** `GET /api/analytics/{code}` — Fetches click-through counts, creation dates, and metadata for a specific short link.
-* **Update Short Link:** `PUT /api/shorten/{code}` — Modifies properties of an existing short link (e.g., updating the destination URL or expiration parameters).
-* **Delete Short Link:** `DELETE /api/shorten/{code}` — Permanently removes or deactivates a short link from the system.
-* **Trigger Orchestration Pipeline:** `POST /api/pipeline/trigger` — Submits a feature request or refactoring task (Greenfield, Brownfield, or Ambiguous).
-* **Governance Approval Gate:** `POST /api/pipeline/approve` — Submits an explicit approval or rejection sign-off for high-risk execution checkpoints.
+* **Create Short Link:** `POST /api/v1/urls` — Generates a new short code for a given long URL.
+* **Redirection:** `GET /api/v1/urls/{shortCode}` — Resolves the short code and redirects the client to the target URL.
+
 
 ---
 
