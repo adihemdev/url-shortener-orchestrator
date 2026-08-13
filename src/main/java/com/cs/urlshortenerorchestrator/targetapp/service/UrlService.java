@@ -24,6 +24,16 @@ public class UrlService {
         this.properties = properties;
     }
 
+    /**
+     * Shortens a long URL by generating a unique short code with collision handling.
+     * On each iteration, generates a random short code and attempts to persist.
+     * If a collision occurs (DataIntegrityViolationException on unique constraint),
+     * retries up to maxRetries times before failing.
+     *
+     * @param longUrl the URL to shorten
+     * @return UrlMapping containing the generated short code and original URL
+     * @throws ShortCodeGenerationException if unable to generate unique code after max retries
+     */
     @Transactional
     public UrlMapping shortenUrl(String longUrl) {
         for (int attempt = 0; attempt < properties.maxRetries(); attempt++) {

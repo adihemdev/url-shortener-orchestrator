@@ -12,6 +12,12 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Centralized error handler for REST API.
+ *
+ * This approach improves client reliability by ensuring predictable error contracts
+ * and consistent logging/monitoring of all error paths.
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {

@@ -72,7 +72,10 @@ Clone the repository, configure your environment settings, and build the project
 
 ```bash
 mvn clean install
-
+``` 
+or 
+```bash
+./mvnw clean install
 ```
 
 ### Run Instructions

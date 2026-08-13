@@ -36,6 +36,8 @@ public class UrlController {
     public ResponseEntity<Void> redirectToLongUrl(@PathVariable String shortCode) {
         log.debug("Redirect request for short code: {}", shortCode);
         Optional<String> longUrl = urlService.getLongUrl(shortCode);
+        // HTTP 301 (Moved Permanently) signals that the short code → long URL mapping is permanent,
+        // allowing browsers/clients to cache the redirect
         return longUrl.<ResponseEntity<Void>>map(s -> {
             log.debug("Redirecting {}", shortCode);
             return ResponseEntity.status(301).location(URI.create(s)).build();
