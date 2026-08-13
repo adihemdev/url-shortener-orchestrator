@@ -1,3 +1,20 @@
 spring:
   application:
     name: url-shortener-orchestrator
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+logging:
+  level:
+    com.cs.urlshortenerorchestrator: INFO
+    org.springframework: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+app:
+  shortener:
+    code-length: 6
+    alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    max-retries: 10
