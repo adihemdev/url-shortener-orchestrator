@@ -47,4 +47,16 @@ public class UrlController {
         });
     }
 
+    @DeleteMapping("/{shortCode}")
+    public ResponseEntity<Void> deleteShortUrl(@PathVariable String shortCode) {
+        log.debug("Received request to delete short code: {}", shortCode);
+        boolean deleted = urlService.deleteUrl(shortCode);
+        if (deleted) {
+            log.info("Successfully deleted short code: {}", shortCode);
+            return ResponseEntity.noContent().build();
+        } else {
+            log.warn("Short code not found for deletion: {}", shortCode);
+            return ResponseEntity.notFound().build();
+        }
+    }
 }

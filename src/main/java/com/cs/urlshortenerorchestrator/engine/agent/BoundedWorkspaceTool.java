@@ -7,65 +7,133 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Filesystem capability exposed to coding agents.
+ * Filesystem capability exposed to engineering agents.
  *
- * Agent access is restricted to explicitly allowed source roots.
- * The agent cannot modify the orchestration engine, target application,
- * build configuration, or repository metadata.
+ * Read and write access are independently bounded so brownfield
+ * analysis can inspect existing code without automatically gaining
+ * permission to modify it.
  */
 public class BoundedWorkspaceTool implements WorkspaceTool {
 
     private final Path projectRoot;
-    private final List<Path> allowedRoots;
+    private final List<Path> allowedReadRoots;
+    private final List<Path> allowedWriteRoots;
 
+    /**
+     * Default greenfield workspace.
+     *
+     * Preserves the existing behavior:
+     * Analytics source/test files may be read and written.
+     */
     public BoundedWorkspaceTool(Path projectRoot) {
+        this(
+                projectRoot,
+                List.of(
+                        "src/main/java/com/cs/urlshortenerorchestrator/analytics",
+                        "src/test/java/com/cs/urlshortenerorchestrator/analytics"
+                ),
+                List.of(
+                        "src/main/java/com/cs/urlshortenerorchestrator/analytics",
+                        "src/test/java/com/cs/urlshortenerorchestrator/analytics"
+                )
+        );
+    }
+
+    /**
+     * Configurable bounded workspace.
+     *
+     * Paths are repository-relative roots.
+     */
+    public BoundedWorkspaceTool(
+            Path projectRoot,
+            List<String> readableRoots,
+            List<String> writableRoots) {
+
         this.projectRoot =
-                Objects.requireNonNull(projectRoot, "projectRoot required")
+                Objects.requireNonNull(
+                                projectRoot,
+                                "projectRoot required"
+                        )
                         .toAbsolutePath()
                         .normalize();
 
-        this.allowedRoots = List.of(
-                this.projectRoot.resolve(
-                        "src/main/java/com/cs/urlshortenerorchestrator/analytics"
-                ).normalize(),
-                this.projectRoot.resolve(
-                        "src/test/java/com/cs/urlshortenerorchestrator/analytics"
-                ).normalize()
+        Objects.requireNonNull(
+                readableRoots,
+                "readableRoots required"
         );
+
+        Objects.requireNonNull(
+                writableRoots,
+                "writableRoots required"
+        );
+
+        this.allowedReadRoots =
+                readableRoots.stream()
+                        .map(this::resolveConfiguredRoot)
+                        .toList();
+
+        this.allowedWriteRoots =
+                writableRoots.stream()
+                        .map(this::resolveConfiguredRoot)
+                        .toList();
     }
 
     @Override
     public String readFile(String relativePath) {
-        Path path = resolveAllowed(relativePath);
+
+        Path path =
+                resolveAllowed(
+                        relativePath,
+                        allowedReadRoots,
+                        "read"
+                );
 
         try {
             return Files.readString(path);
+
         } catch (IOException e) {
             throw new IllegalStateException(
-                    "Unable to read workspace file: " + relativePath,
+                    "Unable to read workspace file: "
+                            + relativePath,
                     e
             );
         }
     }
 
     @Override
-    public void writeFile(String relativePath, String content) {
-        Objects.requireNonNull(content, "content required");
+    public void writeFile(
+            String relativePath,
+            String content) {
 
-        Path path = resolveAllowed(relativePath);
+        Objects.requireNonNull(
+                content,
+                "content required"
+        );
+
+        Path path =
+                resolveAllowed(
+                        relativePath,
+                        allowedWriteRoots,
+                        "write"
+                );
 
         try {
-            Path parent = path.getParent();
+            Path parent =
+                    path.getParent();
 
             if (parent != null) {
                 Files.createDirectories(parent);
             }
 
-            Files.writeString(path, content);
+            Files.writeString(
+                    path,
+                    content
+            );
 
         } catch (IOException e) {
             throw new IllegalStateException(
-                    "Unable to write workspace file: " + relativePath,
+                    "Unable to write workspace file: "
+                            + relativePath,
                     e
             );
         }
@@ -73,28 +141,65 @@ public class BoundedWorkspaceTool implements WorkspaceTool {
 
     @Override
     public boolean exists(String relativePath) {
-        return Files.exists(resolveAllowed(relativePath));
+
+        Path path =
+                resolveAllowed(
+                        relativePath,
+                        allowedReadRoots,
+                        "read"
+                );
+
+        return Files.exists(path);
     }
 
-    private Path resolveAllowed(String relativePath) {
+    private Path resolveConfiguredRoot(
+            String relativeRoot) {
 
-        if (relativePath == null || relativePath.isBlank()) {
+        if (relativeRoot == null
+                || relativeRoot.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "configured root required"
+            );
+        }
+
+        return projectRoot
+                .resolve(relativeRoot)
+                .toAbsolutePath()
+                .normalize();
+    }
+
+    private Path resolveAllowed(
+            String relativePath,
+            List<Path> allowedRoots,
+            String operation) {
+
+        if (relativePath == null
+                || relativePath.isBlank()) {
+
             throw new IllegalArgumentException(
                     "relativePath required"
             );
         }
 
         Path resolved =
-                projectRoot.resolve(relativePath)
+                projectRoot
+                        .resolve(relativePath)
                         .toAbsolutePath()
                         .normalize();
 
-        boolean allowed = allowedRoots.stream()
-                .anyMatch(resolved::startsWith);
+        boolean allowed =
+                allowedRoots.stream()
+                        .anyMatch(
+                                resolved::startsWith
+                        );
 
         if (!allowed) {
             throw new SecurityException(
-                    "Agent workspace access denied: " + relativePath
+                    "Agent workspace "
+                            + operation
+                            + " access denied: "
+                            + relativePath
             );
         }
 

@@ -133,5 +133,30 @@ class UrlServiceTests {
         verify(urlRepository, times(10)).save(any(UrlMapping.class));
     }
 
-}
+    @Test
+    @DisplayName("Deleting an existing short code should return true")
+    void shouldReturnTrueWhenDeletingExistingShortCode() {
+        String shortCode = "ABC123";
+        when(urlRepository.existsByShortCode(shortCode)).thenReturn(true);
+        doNothing().when(urlRepository).deleteByShortCode(shortCode);
 
+        boolean result = urlService.deleteUrl(shortCode);
+
+        assertTrue(result);
+        verify(urlRepository).existsByShortCode(shortCode);
+        verify(urlRepository).deleteByShortCode(shortCode);
+    }
+
+    @Test
+    @DisplayName("Deleting a missing short code should return false")
+    void shouldReturnFalseWhenDeletingMissingShortCode() {
+        String shortCode = "NONEXIST";
+        when(urlRepository.existsByShortCode(shortCode)).thenReturn(false);
+
+        boolean result = urlService.deleteUrl(shortCode);
+
+        assertFalse(result);
+        verify(urlRepository).existsByShortCode(shortCode);
+        verify(urlRepository, never()).deleteByShortCode(shortCode);
+    }
+}
