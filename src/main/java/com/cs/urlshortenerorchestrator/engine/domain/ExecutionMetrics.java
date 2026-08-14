@@ -3,18 +3,25 @@ package com.cs.urlshortenerorchestrator.engine.domain;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * ExecutionMetrics: aggregated metrics from workflow execution.
- * Continuously updated as execution progresses.
+ * Continuously updated as execution progresses (success rate, latency, MTTR, etc.)
  */
+@Getter
+@Setter
 public class ExecutionMetrics {
     private int totalNodes;
     private int completedNodes;
     private int failedNodes;
     private int retriedNodes;
     private int rolledBackNodes;
+    private int replannedCount;
+    private final List<Long> nodeLatencies = new ArrayList<>();
     private final List<Long> approvalWaitTimes = new ArrayList<>();
+    private final List<Long> retryDelayTotals = new ArrayList<>();
     private Instant workflowStartedAt;
     private Instant workflowEndedAt;
 
@@ -29,35 +36,61 @@ public class ExecutionMetrics {
     }
 
     public long getAverageMTTRMs() {
-        if (retriedNodes == 0) return 0;
-        long totalApprovalWaitTime = approvalWaitTimes.stream().mapToLong(Long::longValue).sum();
-        return totalApprovalWaitTime / retriedNodes;
+        if (retriedNodes == 0 && rolledBackNodes == 0) return 0;
+        long totalWait = retryDelayTotals.stream().mapToLong(Long::longValue).sum();
+        int recoveryCount = retriedNodes + rolledBackNodes;
+        return recoveryCount > 0 ? totalWait / recoveryCount : 0;
     }
 
-    // Getters and adders
-    public int getTotalNodes() { return totalNodes; }
-    public void setTotalNodes(int total) { this.totalNodes = total; }
+    public long getAverageNodeLatencyMs() {
+        if (nodeLatencies.isEmpty()) return 0;
+        return nodeLatencies.stream().mapToLong(Long::longValue).sum() / nodeLatencies.size();
+    }
 
-    public int getCompletedNodes() { return completedNodes; }
-    public void incrementCompletedNodes() { this.completedNodes++; }
+    public double getRetryFrequency() {
+        if (totalNodes == 0) return 0;
+        return (double) retriedNodes / totalNodes;
+    }
 
-    public int getFailedNodes() { return failedNodes; }
-    public void incrementFailedNodes() { this.failedNodes++; }
-
-    public int getRetriedNodes() { return retriedNodes; }
-    public void incrementRetriedNodes() { this.retriedNodes++; }
-
-    public int getRolledBackNodes() { return rolledBackNodes; }
-    public void incrementRolledBackNodes() { this.rolledBackNodes++; }
+    public double getRollbackFrequency() {
+        if (totalNodes == 0) return 0;
+        return (double) rolledBackNodes / totalNodes;
+    }
 
     public void recordApprovalWaitTime(long ms) {
         approvalWaitTimes.add(ms);
     }
 
-    public Instant getWorkflowStartedAt() { return workflowStartedAt; }
-    public void setWorkflowStartedAt(Instant instant) { this.workflowStartedAt = instant; }
+    public void recordNodeLatency(long ms) {
+        nodeLatencies.add(ms);
+    }
 
-    public Instant getWorkflowEndedAt() { return workflowEndedAt; }
-    public void setWorkflowEndedAt(Instant instant) { this.workflowEndedAt = instant; }
+    public void recordRetryDelayTotal(long ms) {
+        retryDelayTotals.add(ms);
+    }
+
+    public long getTotalApprovalWaitTimeMs() {
+        return approvalWaitTimes.stream().mapToLong(Long::longValue).sum();
+    }
+
+    public void incrementCompletedNodes() {
+        this.completedNodes++;
+    }
+
+    public void incrementFailedNodes() {
+        this.failedNodes++;
+    }
+
+    public void incrementRetriedNodes() {
+        this.retriedNodes++;
+    }
+
+    public void incrementRolledBackNodes() {
+        this.rolledBackNodes++;
+    }
+
+    public void incrementReplannedCount() {
+        this.replannedCount++;
+    }
 }
 

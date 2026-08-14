@@ -11,6 +11,7 @@ public enum NodeType {
     IMPLEMENTATION,
     TESTING,
     VALIDATION,
-    RELEASE_READY
+    RELEASE_READY,
+    SYNCHRONIZATION
 }
 
