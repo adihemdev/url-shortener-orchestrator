@@ -112,5 +112,10 @@ public class WorkflowState {
     public Artifact getArtifactById(String artifactId) {
         return artifacts.get(artifactId);
     }
+
+    public void reopenNodesForReplan(Set<String> nodeIds) {
+        completedNodeIds.removeAll(nodeIds);
+        failedNodes.keySet().removeAll(nodeIds);
+    }
 }
 

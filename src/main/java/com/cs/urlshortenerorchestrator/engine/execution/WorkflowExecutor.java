@@ -536,30 +536,118 @@ public class WorkflowExecutor {
         }
     }
 
-    private void triggerReplan(WorkflowNode failedNode, String reason) {
-        if (replanCount >= maxReplans) {
-            auditLog("REPLAN_EXHAUSTED", "Max replans exceeded", failedNode.getId());
-            workflow.getCurrentState().setPhase(WorkflowState.ExecutionPhase.FAILED);
+    private void triggerReplan(
+            WorkflowNode failedNode,
+            String reason) {
+
+        ReplanTrigger trigger =
+                failedNode.getReplanTrigger();
+
+        int allowedReplans =
+                trigger != null
+                        ? Math.min(
+                        maxReplans,
+                        trigger.getMaxReplans()
+                )
+                        : maxReplans;
+
+        if (replanCount >= allowedReplans) {
+
+            auditLog(
+                    "REPLAN_EXHAUSTED",
+                    "Max replans exceeded",
+                    failedNode.getId()
+            );
+
+            workflow.getCurrentState()
+                    .setPhase(
+                            WorkflowState.ExecutionPhase.FAILED
+                    );
+
             return;
         }
 
         replanCount++;
+
         metrics.incrementReplannedCount();
 
-        decisionRecorder.recordReplanDecision(failedNode.getId(), reason,
-            Arrays.asList("Exit gate validation failed"), replanCount);
+        /*
+         * A validation node may discover that an earlier engineering
+         * stage needs to run again.
+         *
+         * If no explicit trigger exists, preserve the original behavior
+         * and replan from the failed node.
+         */
+        String replanFromNodeId =
+                trigger != null
+                        ? trigger.getNodeIdToReplanFrom()
+                        : failedNode.getId();
 
-        // Clear downstream nodes to allow re-execution from failed node
-        Set<String> completed = new HashSet<>(workflow.getCurrentState().getCompletedNodeIds());
-        Set<String> toRemove = getDownstreamNodes(failedNode.getId());
-        toRemove.forEach(completed::remove);
+        String replanReason =
+                trigger != null
+                        && trigger.getReasonDescription() != null
+                        ? trigger.getReasonDescription()
+                        : reason;
 
-        // Reset completed nodes
-        workflow.getCurrentState().getCompletedNodeIds().clear();
-        workflow.getCurrentState().getCompletedNodeIds().addAll(completed);
+        List<String> assumptions =
+                trigger != null
+                        ? trigger.getAssumptionsBroken()
+                        : List.of(
+                        "Exit gate validation failed"
+                );
 
-        auditLog("REPLAN_EXECUTED", "Replan " + replanCount + " triggered at " + failedNode.getId() +
-                ": " + reason, failedNode.getId());
+        decisionRecorder.recordReplanDecision(
+                failedNode.getId(),
+                replanReason,
+                assumptions,
+                replanCount
+        );
+
+        /*
+         * Reopen the configured node AND every downstream node.
+         *
+         * Example:
+         *
+         * implementation
+         *      ↓
+         * testing
+         *      ↓
+         * validation
+         *
+         * If validation identifies an implementation gap and its
+         * ReplanTrigger specifies "implementation", all three nodes
+         * become executable again.
+         */
+        Set<String> nodesToReopen =
+                getDownstreamNodes(
+                        replanFromNodeId
+                );
+
+        nodesToReopen.add(
+                replanFromNodeId
+        );
+
+        workflow.getCurrentState()
+                .reopenNodesForReplan(nodesToReopen);
+
+
+        workflow.getCurrentState()
+                .setPhase(
+                        WorkflowState.ExecutionPhase.RUNNING
+                );
+
+        auditLog(
+                "REPLAN_EXECUTED",
+                "Replan "
+                        + replanCount
+                        + " triggered by "
+                        + failedNode.getId()
+                        + "; restarting from "
+                        + replanFromNodeId
+                        + ": "
+                        + replanReason,
+                failedNode.getId()
+        );
     }
 
     private Set<String> getDownstreamNodes(String nodeId) {

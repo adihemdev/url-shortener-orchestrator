@@ -111,6 +111,12 @@ public class ExecutionContext {
         return workflowState.getArtifactById(artifactId);
     }
 
+    public List<Artifact> getAllArtifacts() {
+        return new ArrayList<>(
+                workflowState.getArtifacts().values()
+        );
+    }
+
     @Override
     public String toString() {
         return String.format("ExecutionContext[node=%s, executionStatus=%s, workflowPhase=%s]",

@@ -1,8 +1,9 @@
 package com.cs.urlshortenerorchestrator.engine.planning;
 
-import com.cs.urlshortenerorchestrator.engine.domain.ApprovalGate;
-import com.cs.urlshortenerorchestrator.engine.domain.Workflow;
-import com.cs.urlshortenerorchestrator.engine.domain.WorkflowNode;
+import com.cs.urlshortenerorchestrator.engine.domain.*;
+import com.cs.urlshortenerorchestrator.engine.execution.ExecutionContext;
+
+import java.util.List;
 
 public class WorkflowPlanMapper {
 
@@ -59,6 +60,120 @@ public class WorkflowPlanMapper {
                             .approver("ENGINEERING_REVIEWER")
                             .description(
                                     "Human approval required for " + plannedNode.id())
+                            .build()
+            );
+        }
+
+        if (plannedNode.type() == NodeType.TESTING) {
+
+            ValidationRule testsPassedRule =
+                    new ValidationRule(
+                            "generated_tests_pass",
+                            ValidationRule.RuleType.CUSTOM,
+                            "analytics-test-execution-v1",
+                            value -> {
+
+                                if (!(value instanceof ExecutionContext context)) {
+                                    return false;
+                                }
+
+                                Artifact artifact =
+                                        context.getArtifactById(
+                                                "analytics-test-execution-v1"
+                                        );
+
+                                return artifact != null
+                                        && "PASS".equals(
+                                        artifact.metadata()
+                                                .get("status")
+                                );
+                            },
+                            ValidationRule.Severity.ERROR,
+                            "Generated Analytics tests must execute successfully"
+                    );
+
+            builder.exitGate(
+                    Gate.builder(
+                                    plannedNode.id()
+                                            + "-testing-gate"
+                            )
+                            .validation()
+                            .validationRules(
+                                    List.of(testsPassedRule)
+                            )
+                            .failureAction(
+                                    Gate.FailureAction.TRIGGER_REPLAN
+                            )
+                            .build()
+            );
+
+            builder.replanTrigger(
+                    ReplanTrigger.builder(
+                                    plannedNode.id()
+                                            + "-testing-replan",
+                                    ReplanTrigger.TriggerType.REGRESSION_DETECTED,
+                                    "testing"
+                            )
+                            .maxReplans(1)
+                            .reason(
+                                    "Generated test suite failed and requires repair"
+                            )
+                            .build()
+            );
+        }
+
+        if (plannedNode.type() == NodeType.VALIDATION) {
+
+            ValidationRule validationPassedRule =
+                    new ValidationRule(
+                            "analytics_acceptance_validation",
+                            ValidationRule.RuleType.CUSTOM,
+                            "analytics-validation-v1",
+                            value -> {
+                                if (!(value instanceof ExecutionContext context)) {
+                                    return false;
+                                }
+
+                                Artifact artifact =
+                                        context.getArtifactById(
+                                                "analytics-validation-v1"
+                                        );
+
+                                return artifact != null
+                                        && "PASS".equals(
+                                        artifact.metadata()
+                                                .get("status")
+                                );
+                            },
+                            ValidationRule.Severity.ERROR,
+                            "Analytics acceptance validation must pass"
+                    );
+
+            builder.exitGate(
+                    Gate.builder(
+                                    plannedNode.id()
+                                            + "-validation-gate"
+                            )
+                            .validation()
+                            .validationRules(
+                                    List.of(validationPassedRule)
+                            )
+                            .failureAction(
+                                    Gate.FailureAction.TRIGGER_REPLAN
+                            )
+                            .build()
+            );
+
+            builder.replanTrigger(
+                    ReplanTrigger.builder(
+                                    plannedNode.id() + "-replan",
+                                    ReplanTrigger.TriggerType.VALIDATION_FAILED,
+                                    "implementation"
+                            )
+                            .maxReplans(2)
+                            .reason(
+                                    "Validation failure requires implementation repair"
+                            )
                             .build()
             );
         }
