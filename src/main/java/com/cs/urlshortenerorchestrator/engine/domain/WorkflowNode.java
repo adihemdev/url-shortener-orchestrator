@@ -24,12 +24,14 @@ public class WorkflowNode {
     private final RollbackPolicy rollbackPolicy;
     private final int timeoutSeconds;
     private final List<Policy> policies;
+    private final ReplanTrigger replanTrigger;
 
     public WorkflowNode(String id, NodeType type, String description,
                        Set<String> dependsOnNodeIds, Set<String> parallelNodeIds,
                        Gate entryGate, String executorName, Gate exitGate,
                        ApprovalGate approvalGate, RetryPolicy retryPolicy,
-                       RollbackPolicy rollbackPolicy, int timeoutSeconds, List<Policy> policies) {
+                       RollbackPolicy rollbackPolicy, int timeoutSeconds,
+                        List<Policy> policies, ReplanTrigger replanTrigger) {
         this.id = Objects.requireNonNull(id, "id required");
         this.type = Objects.requireNonNull(type, "type required");
         this.description = description;
@@ -43,6 +45,7 @@ public class WorkflowNode {
         this.rollbackPolicy = rollbackPolicy != null ? rollbackPolicy : RollbackPolicy.noRollback();
         this.timeoutSeconds = timeoutSeconds;
         this.policies = policies != null ? policies : List.of();
+        this.replanTrigger = replanTrigger;
     }
 
     // Getters
@@ -59,6 +62,9 @@ public class WorkflowNode {
     public RollbackPolicy getRollbackPolicy() { return rollbackPolicy; }
     public int getTimeoutSeconds() { return timeoutSeconds; }
     public List<Policy> getPolicies() { return policies; }
+    public ReplanTrigger getReplanTrigger() {
+        return replanTrigger;
+    }
 
 
     public boolean isParallelWith(String nodeId) {
@@ -87,6 +93,7 @@ public class WorkflowNode {
         private RollbackPolicy rollbackPolicy = RollbackPolicy.noRollback();
         private int timeoutSeconds = 600;
         private List<Policy> policies = List.of();
+        private ReplanTrigger replanTrigger;
 
         public Builder(String id, NodeType type) {
             this.id = id;
@@ -148,10 +155,16 @@ public class WorkflowNode {
             return this;
         }
 
+        public Builder replanTrigger(ReplanTrigger replanTrigger) {
+            this.replanTrigger = replanTrigger;
+            return this;
+        }
+
         public WorkflowNode build() {
             return new WorkflowNode(id, type, description, dependsOnNodeIds,
                 parallelNodeIds, entryGate, executorName, exitGate,
-                approvalGate, retryPolicy, rollbackPolicy, timeoutSeconds, policies);
+                approvalGate, retryPolicy, rollbackPolicy, timeoutSeconds,
+                    policies, replanTrigger);
         }
     }
 }

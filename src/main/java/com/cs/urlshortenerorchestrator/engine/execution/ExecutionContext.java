@@ -6,6 +6,7 @@ import lombok.Getter;
 import java.util.Objects;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 /**
  * ExecutionContext: captures the actual runtime context for policy evaluation
@@ -21,6 +22,7 @@ public class ExecutionContext {
     private final Execution execution;
     private final WorkflowState workflowState;
     private final ExecutionMetrics metrics;
+    private final Consumer<Artifact> artifactPublisher;
 
     public ExecutionContext(WorkflowNode node, Execution execution,
                            WorkflowState workflowState, ExecutionMetrics metrics) {
@@ -28,6 +30,24 @@ public class ExecutionContext {
         this.execution = execution;  // can be null before execution
         this.workflowState = Objects.requireNonNull(workflowState, "workflowState required");
         this.metrics = Objects.requireNonNull(metrics, "metrics required");
+        this.artifactPublisher = artifact -> {};
+    }
+
+    public ExecutionContext(
+            WorkflowNode node,
+            Execution execution,
+            WorkflowState workflowState,
+            ExecutionMetrics metrics,
+            Consumer<Artifact> artifactPublisher) {
+
+        this.node = Objects.requireNonNull(node, "node required");
+        this.execution = execution;
+        this.workflowState =
+                Objects.requireNonNull(workflowState, "workflowState required");
+        this.metrics =
+                Objects.requireNonNull(metrics, "metrics required");
+        this.artifactPublisher =
+                Objects.requireNonNull(artifactPublisher, "artifactPublisher required");
     }
 
     /**
@@ -69,6 +89,32 @@ public class ExecutionContext {
         }
 
         return result;
+    }
+
+    /**
+     * Publish an artifact produced by the current executor.
+     * WorkflowExecutor remains responsible for storing and auditing it.
+     */
+    public void publishArtifact(Artifact artifact) {
+        Objects.requireNonNull(artifact, "artifact required");
+
+        if (!node.getId().equals(artifact.producedByNodeId())) {
+            throw new IllegalArgumentException(
+                    "Artifact producer must match current node: " + node.getId()
+            );
+        }
+
+        artifactPublisher.accept(artifact);
+    }
+
+    public Artifact getArtifactById(String artifactId) {
+        return workflowState.getArtifactById(artifactId);
+    }
+
+    public List<Artifact> getAllArtifacts() {
+        return new ArrayList<>(
+                workflowState.getArtifacts().values()
+        );
     }
 
     @Override
