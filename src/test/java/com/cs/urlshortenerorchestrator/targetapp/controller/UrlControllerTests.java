@@ -19,6 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(UrlController.class)
@@ -118,8 +119,29 @@ class UrlControllerTests {
                 .andExpect(jsonPath("$.status").value(500));
     }
 
+    @Test
+    @DisplayName("DELETE /api/v1/urls/{shortCode} should return 204 when short code exists")
+    void shouldReturn204WhenShortCodeExistsOnDelete() throws Exception {
+        String shortCode = "ABC123";
+
+        when(urlService.deleteUrl(shortCode)).thenReturn(true);
+
+        mockMvc.perform(delete("/api/v1/urls/" + shortCode))
+                .andExpect(status().isNoContent());
+
+        verify(urlService).deleteUrl(shortCode);
+    }
+
+    @Test
+    @DisplayName("DELETE /api/v1/urls/{shortCode} should return 404 when short code does not exist")
+    void shouldReturn404WhenShortCodeDoesNotExistOnDelete() throws Exception {
+        String shortCode = "NONEXIST";
+
+        when(urlService.deleteUrl(shortCode)).thenReturn(false);
+
+        mockMvc.perform(delete("/api/v1/urls/" + shortCode))
+                .andExpect(status().isNotFound());
+
+        verify(urlService).deleteUrl(shortCode);
+    }
 }
-
-
-
-

@@ -38,6 +38,10 @@ public class EngineeringAgent {
                     executeImplementation(task);
             case TESTING ->
                     executeTesting(task);
+            case ANALYSIS ->
+                    throw new IllegalArgumentException(
+                            "Use analyze() for ANALYSIS tasks"
+                    );
             case VALIDATION ->
                     throw new IllegalArgumentException(
                             "Use validate() for VALIDATION tasks"
@@ -104,7 +108,10 @@ public class EngineeringAgent {
               ],
               "summary": "concise implementation summary"
             }
-
+            
+            JSON must be strictly valid RFC 8259 JSON.
+            Do not include // comments, /* comments */, trailing commas,
+            or unescaped newlines inside JSON strings.
             Do not include markdown fences or explanatory prose outside JSON.
             """;
 
@@ -143,23 +150,10 @@ public class EngineeringAgent {
         CodeGenerationResult result;
 
         try {
-            String rawContent = response.content().trim();
-
-            // Some models may wrap otherwise-valid JSON in Markdown code fences.
-            if (rawContent.startsWith("```json")) {
-                rawContent = rawContent.substring(7);
-            } else if (rawContent.startsWith("```")) {
-                rawContent = rawContent.substring(3);
-            }
-
-            if (rawContent.endsWith("```")) {
-                rawContent = rawContent.substring(
-                        0,
-                        rawContent.length() - 3
-                );
-            }
-
-            rawContent = rawContent.trim();
+            String rawContent =
+                    normalizeJsonResponse(
+                            response.content()
+                    );
 
             result = objectMapper.readValue(
                     rawContent,
@@ -318,7 +312,10 @@ public class EngineeringAgent {
           ],
           "summary": "concise testing summary"
         }
-
+        
+        JSON must be strictly valid RFC 8259 JSON.
+        Do not include // comments, /* comments */, trailing commas,
+        or unescaped newlines inside JSON strings.
         Do not include markdown fences or explanatory prose outside JSON.
         """;
 
@@ -354,25 +351,14 @@ public class EngineeringAgent {
                         userPrompt
                 );
 
+
         CodeGenerationResult result;
 
         try {
-            String rawContent = response.content().trim();
-
-            if (rawContent.startsWith("```json")) {
-                rawContent = rawContent.substring(7);
-            } else if (rawContent.startsWith("```")) {
-                rawContent = rawContent.substring(3);
-            }
-
-            if (rawContent.endsWith("```")) {
-                rawContent = rawContent.substring(
-                        0,
-                        rawContent.length() - 3
-                );
-            }
-
-            rawContent = rawContent.trim();
+            String rawContent =
+                    normalizeJsonResponse(
+                            response.content()
+                    );
 
             result = objectMapper.readValue(
                     rawContent,
@@ -451,6 +437,122 @@ public class EngineeringAgent {
                     return context.toString();
                 })
                 .collect(Collectors.joining("\n"));
+    }
+
+    public ImpactAnalysis analyze(
+            EngineeringTask task) {
+
+        if (task.role() != AgentRole.ANALYSIS) {
+            throw new IllegalArgumentException(
+                    "Analysis task requires ANALYSIS role"
+            );
+        }
+
+        if (task.upstreamArtifacts() == null
+                || task.upstreamArtifacts().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Analysis requires existing code artifacts"
+            );
+        }
+
+        if (task.objective() == null
+                || task.objective().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Analysis objective required"
+            );
+        }
+
+        String artifactContext =
+                buildTestingContext(
+                        task.upstreamArtifacts()
+                );
+
+        String constraintContext =
+                buildConstraintContext(
+                        task.constraints()
+                );
+
+        String systemPrompt = """
+        You are a senior software engineer performing brownfield impact analysis.
+
+        Your task is to understand an existing codebase and determine the
+        smallest safe change required to satisfy the requested behavior.
+
+        Rules:
+        - Do not generate source code.
+        - Do not modify files.
+        - Identify only files that genuinely need to change.
+        - Preserve existing behavior unless the requirement explicitly changes it.
+        - Reuse existing framework/repository capabilities where possible.
+        - Avoid introducing new abstractions, infrastructure, or dependencies
+          unless they are clearly necessary.
+        - Identify regression tests that should continue to pass.
+
+        Return ONLY JSON:
+
+        {
+          "impactedFiles": [
+            "path/to/file"
+          ],
+          "preservedBehaviors": [
+            "existing behavior that must remain unchanged"
+          ],
+          "implementationSteps": [
+            "minimal implementation step"
+          ],
+          "testChanges": [
+            "test that should be added or updated"
+          ],
+          "risks": [
+            "relevant risk or edge case"
+          ],
+          "summary": "concise impact analysis"
+        }
+
+        Do not include markdown fences or explanatory prose outside JSON.
+        """;
+
+        String userPrompt = """
+        Brownfield change request:
+
+        %s
+
+        Constraints:
+
+        %s
+
+        Existing code and test context:
+
+        %s
+        """.formatted(
+                task.objective(),
+                constraintContext,
+                artifactContext
+        );
+
+        AgentResponse response =
+                agentClient.execute(
+                        systemPrompt,
+                        userPrompt
+                );
+
+        try {
+            String rawContent =
+                    normalizeJsonResponse(
+                            response.content()
+                    );
+
+            return objectMapper.readValue(
+                    rawContent,
+                    ImpactAnalysis.class
+            );
+
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Analysis agent returned invalid impact-analysis JSON",
+                    e
+            );
+        }
     }
 
     public ValidationAssessment validate(

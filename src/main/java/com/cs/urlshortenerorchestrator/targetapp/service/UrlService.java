@@ -74,4 +74,13 @@ public class UrlService {
         return urlRepository.findByShortCode(shortCode)
                 .map(UrlMapping::getLongUrl);
     }
+
+    @Transactional
+    public boolean deleteUrl(String shortCode) {
+        if (urlRepository.existsByShortCode(shortCode)) {
+            urlRepository.deleteByShortCode(shortCode);
+            return true;
+        }
+        return false;
+    }
 }

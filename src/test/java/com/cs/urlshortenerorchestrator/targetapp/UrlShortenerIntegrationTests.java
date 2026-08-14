@@ -18,6 +18,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -84,5 +85,77 @@ class UrlShortenerIntegrationTests {
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("DELETE /api/v1/urls/{shortCode} should delete URL mapping and return 204")
+    void shouldDeleteUrlMappingSuccessfully() {
+
+        String longUrl =
+                "https://www.example.com/url/to/delete";
+
+        HttpEntity<UrlRequest> createRequest =
+                new HttpEntity<>(
+                        new UrlRequest(longUrl),
+                        jsonHeaders()
+                );
+
+        ResponseEntity<UrlResponse> createResponse =
+                restTemplate.exchange(
+                        "/api/v1/urls",
+                        HttpMethod.POST,
+                        createRequest,
+                        UrlResponse.class
+                );
+
+        assertEquals(
+                HttpStatus.OK,
+                createResponse.getStatusCode()
+        );
+
+        assertNotNull(
+                createResponse.getBody()
+        );
+
+        String shortCode =
+                createResponse.getBody()
+                        .shortCode();
+
+        ResponseEntity<Void> deleteResponse =
+                restTemplate.exchange(
+                        "/api/v1/urls/" + shortCode,
+                        HttpMethod.DELETE,
+                        null,
+                        Void.class
+                );
+
+        assertEquals(
+                HttpStatus.NO_CONTENT,
+                deleteResponse.getStatusCode()
+        );
+
+        Optional<UrlMapping> deleted =
+                urlRepository.findByShortCode(
+                        shortCode
+                );
+
+        assertFalse(
+                deleted.isPresent()
+        );
+    }
+
+    @Test
+    @DisplayName("DELETE /api/v1/urls/{shortCode} should return 404 for missing short code")
+    void shouldReturn404ForMissingShortCodeOnDelete() {
+        String nonExistentShortCode = "NONEXIST";
+
+        ResponseEntity<Void> deleteResponse = restTemplate.exchange(
+                "/api/v1/urls/" + nonExistentShortCode,
+                HttpMethod.DELETE,
+                null,
+                Void.class
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, deleteResponse.getStatusCode());
     }
 }
