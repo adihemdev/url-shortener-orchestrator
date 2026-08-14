@@ -323,7 +323,19 @@ public class WorkflowExecutor {
 
             try {
                 // Execute node
-                lastExecution = nodeExecutor.execute(node, attempt);
+                ExecutionContext context = new ExecutionContext(
+                        node,
+                        null,
+                        workflow.getCurrentState(),
+                        metrics,
+                        this::recordArtifact
+                );
+
+                if (nodeExecutor instanceof ContextAwareNodeExecutor contextAwareExecutor) {
+                    lastExecution = contextAwareExecutor.execute(node, attempt, context);
+                } else {
+                    lastExecution = nodeExecutor.execute(node, attempt);
+                }
 
                 if (lastExecution.getStatus() == ExecutionStatus.SUCCESS) {
                     if (attempt > 1) {
