@@ -103,6 +103,22 @@ public class DecisionRecorder {
         log.debug("Recorded safe-stop decision: {} - {}", nodeId, reason);
     }
 
+    public void recordFallbackDecision(String nodeId, String executionId, String reason, List<String> fallbackArtifactIds) {
+        Decision decision = new Decision(
+            generateDecisionId(),
+            nodeId,
+            executionId,
+            DecisionType.ARTIFACT_FALLBACK,
+            reason,
+            "Fallback to previous artifacts: " + String.join(", ", fallbackArtifactIds),
+            Instant.now(),
+            false,
+            getPreviousDecisionIds()
+        );
+        decisions.add(decision);
+        log.debug("Recorded artifact fallback decision: {} - {}", nodeId, reason);
+    }
+
     /**
      * Record replan decision.
      */

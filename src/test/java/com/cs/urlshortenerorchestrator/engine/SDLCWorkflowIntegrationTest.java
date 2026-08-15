@@ -918,4 +918,112 @@ class SDLCWorkflowIntegrationTest {
         assertThat(capturedOps).containsExactlyElementsOf(rollbackOps);
         assertThat(workflowExecutor.getMetrics().getRolledBackNodes()).isEqualTo(1);
     }
+    @Test
+    @DisplayName("artifact fallback: exit gate failure triggers fallback to previous artifact")
+    void testArtifactFallbackOnExitGateFailure() throws InterruptedException {
+        // 1. Setup nodes: req -> impl
+        WorkflowNode reqNode = WorkflowNode.builder("req", NodeType.REQUIREMENT_ANALYSIS).build();
+
+        // 2. implNode will have FALLBACK_TO_PREVIOUS action
+        WorkflowNode implNode = WorkflowNode.builder("impl", NodeType.IMPLEMENTATION)
+                .dependsOn("req")
+                .exitGate(Gate.builder("impl-exit")
+                        .failureAction(Gate.FailureAction.FALLBACK_TO_PREVIOUS)
+                        .validationRules(List.of(
+                                new ValidationRule("CheckArtifactContent", 
+                                    ValidationRule.RuleType.ARTIFACT_CHECK, "impl-out",
+                                    obj -> {
+                                        if (!(obj instanceof com.cs.urlshortenerorchestrator.engine.execution.ExecutionContext ctx)) return false;
+                                        List<Artifact> arts = ctx.getArtifactsFromPredecessor("impl");
+                                        // Fail if any artifact content is "BAD"
+                                        return arts.stream().noneMatch(a -> "BAD".equals(a.storageLocation()));
+                                    }, 
+                                    ValidationRule.Severity.ERROR, "No BAD content allowed")
+                        ))
+                        .build())
+                .build();
+
+        Workflow workflow = Workflow.builder("fallback-test", "Artifact Fallback Test")
+                .root(reqNode).node(implNode).build();
+
+        // 3. Executor logic:
+        // Attempt 1: impl produces good-artifact
+        // Attempt 2: (after replan) impl produces two bad-artifacts
+        java.util.concurrent.atomic.AtomicInteger implAttempts = new java.util.concurrent.atomic.AtomicInteger(0);
+        NodeExecutor fallbackExecutor = new NodeExecutor() {
+            @Override
+            public Execution execute(WorkflowNode node, int attemptNumber) {
+                Execution.ExecutionBuilder builder = Execution.builder()
+                        .id("exec-" + node.getId() + "-" + System.nanoTime())
+                        .workflowId(workflow.getId())
+                        .nodeId(node.getId())
+                        .attemptNumber(attemptNumber)
+                        .status(ExecutionStatus.SUCCESS)
+                        .startedAt(Instant.now())
+                        .endedAt(Instant.now());
+
+                if ("impl".equals(node.getId())) {
+                    int count = implAttempts.incrementAndGet();
+                    if (count == 1) {
+                        Artifact a1 = new Artifact("a1", ArtifactType.CODE, "code1", "impl", "exec-impl-1", "GOOD", Map.of(), Instant.now());
+                        workflow.getCurrentState().recordArtifact(a1);
+                        builder.producedArtifactIds(List.of("a1"));
+                    } else {
+                        // Attempt 2: Produces two "BAD" artifacts
+                        Artifact a2 = new Artifact("a2", ArtifactType.CODE, "code2", "impl", "exec-impl-2", "BAD", Map.of(), Instant.now());
+                        Artifact a3 = new Artifact("a3", ArtifactType.CODE, "code3", "impl", "exec-impl-2", "BAD", Map.of(), Instant.now());
+                        workflow.getCurrentState().recordArtifact(a2);
+                        workflow.getCurrentState().recordArtifact(a3);
+                        builder.producedArtifactIds(List.of("a2", "a3"));
+                        // Important: Make sure execution ID matches what we deactivated
+                        builder.id("exec-impl-2");
+                    }
+                } else {
+                    Artifact reqArt = new Artifact("req-art", ArtifactType.REQUIREMENT_SPEC, "req", "req", "exec-req", "REQ", Map.of(), Instant.now());
+                    workflow.getCurrentState().recordArtifact(reqArt);
+                    builder.producedArtifactIds(List.of("req-art"));
+                }
+                return builder.build();
+            }
+        };
+
+        WorkflowExecutor executor = new WorkflowExecutor(workflow);
+        
+        // Step A: Run until req is done and impl finishes once successfully.
+        // We'll simulate a replan to make impl run again.
+        executor.execute(fallbackExecutor, (n, e) -> ApprovalResult.builder().approved(true).build());
+        
+        assertThat(workflow.getCurrentState().getCompletedNodeIds()).containsExactly("req", "impl");
+        assertThat(workflow.getCurrentState().getArtifactIdsProducedByNode("impl")).containsExactly("a1");
+
+        // Step B: Trigger Replan of 'impl' node manually so it runs again
+        workflow.getCurrentState().reopenNodesForReplan(java.util.Set.of("impl"));
+        
+        // Step C: Execute again. This time 'impl' will produce a2, a3 (BAD) and fail exit gate, triggering fallback.
+        WorkflowExecutor.ExecutionResult result = executor.execute(fallbackExecutor, (n, e) -> ApprovalResult.builder().approved(true).build());
+
+        // Step D: Verifications
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(workflow.getCurrentState().getPhase()).isEqualTo(WorkflowState.ExecutionPhase.COMPLETED);
+        
+        // Active index should only contain a1
+        List<String> activeArtifacts = workflow.getCurrentState().getArtifactIdsProducedByNode("impl");
+        assertThat(activeArtifacts).containsExactly("a1");
+        assertThat(activeArtifacts).doesNotContain("a2", "a3");
+
+        // Global history should still contain a2, a3
+        assertThat(workflow.getCurrentState().getArtifacts()).containsKey("a1");
+        assertThat(workflow.getCurrentState().getArtifacts()).containsKey("a2");
+        assertThat(workflow.getCurrentState().getArtifacts()).containsKey("a3");
+
+        // Decision and metrics
+        assertThat(executor.getDecisionRecorder().getDecisions())
+                .anySatisfy(d -> {
+                    assertThat(d.type()).isEqualTo(DecisionType.ARTIFACT_FALLBACK);
+                    assertThat(d.madeByNodeId()).isEqualTo("impl");
+                    assertThat(d.outcome()).contains("a1");
+                });
+        
+        assertThat(executor.getMetrics().getFallbackCount()).isEqualTo(1);
+    }
 }

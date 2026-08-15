@@ -10,7 +10,7 @@ import lombok.Getter;
  */
 public class Gate {
     public enum Type { PASS_THROUGH, VALIDATION, BLOCKING }
-    public enum FailureAction { BLOCK, WARN, TRIGGER_REPLAN }
+    public enum FailureAction { BLOCK, WARN, TRIGGER_REPLAN, FALLBACK_TO_PREVIOUS }
 
     private final String name;
     private final Type type;

@@ -51,13 +51,14 @@ The project exercises three agentic SDLC pathways.
 ### 1. Greenfield
 
 The greenfield scenario demonstrates building a new analytics capability from scratch. The engine orchestrates a complete SDLC pipeline:
+
 - **Requirement Analysis**: Agent identifies tasks from an ambiguous prompt.
 - **Decomposition**: Tasks are sequenced into a dependency graph.
 - **Implementation & Testing**: Parallel execution of code generation and test suite creation.
 - **Synchronization**: Engine waits for parallel paths to converge before validation.
 - **Validation**: Execution of generated tests against the new implementation.
 - **Governance**: Human approval checkpoint before final release.
-- **Decision Lineage**: Full audit trail of all agent and human decisions.
+- **Decision Lineage**: Full audit trail of agent and human decisions.
 
 ### 2. Brownfield
 
@@ -118,11 +119,25 @@ If an approval is rejected and the node is configured with a reversible `Rollbac
 
 Approval decisions and rollback actions are captured through the workflow's existing decision lineage and audit mechanisms.
 
-### Bounded Replanning and Fallback
+### Artifact Fallback and Bounded Replanning
 
-The engine supports governed recovery through Bounded Replanning. When a node's failure path is configured for TRIGGER_REPLAN, the engine can re-open upstream dependencies and resume execution from an earlier stable stage.
+The engine provides distinct recovery mechanisms for different failure modes.
 
-Replanning is bounded to prevent infinite recovery loops. If recovery is not possible or permitted, the system enters a Safe-Stop phase to prevent destructive automated progress.
+**Artifact Fallback** allows a workflow to recover from an invalid output without re-executing the producing node. When an exit-gate failure is configured with `FALLBACK_TO_PREVIOUS`, artifacts produced by the failed execution are deactivated from the node's active artifact index while remaining available in global artifact history for audit and traceability. Downstream nodes then receive the previous active artifacts for that node.
+
+Fallback is scoped using the artifact's producing execution ID, ensuring that all artifacts from the failed execution are deactivated together.
+
+**Bounded Replanning** handles failures that require workflow stages to be revisited. When a failure path is configured with `TRIGGER_REPLAN`, the engine can reopen affected nodes and resume execution from an earlier stage. Replanning is bounded to prevent infinite recovery loops.
+
+These controls remain intentionally distinct:
+
+- **Retry**: repeats the same execution for a recoverable or transient failure.
+- **Fallback**: substitutes failed execution outputs with previous active outputs.
+- **Replan**: reopens affected workflow stages so work can be performed again.
+- **Rollback**: invokes compensating operations for reversible side effects.
+- **Safe-Stop**: halts automated progress when recovery cannot be performed safely.
+
+If artifact fallback is requested but no previous artifact is available, the workflow does not invent an alternative output and instead follows the configured safe failure behavior.
 
 ### Ambiguity Blocking
 
@@ -139,12 +154,16 @@ Rather than inventing missing product requirements, it can return:
 
 Workflow execution records decisions and execution events so that important transitions can be traced back to their originating workflow and execution context.
 
+Artifact fallback decisions are also recorded, including the failed execution and the previous active artifacts selected for downstream use.
+
 ### Reliability Metrics
 
 The engine programmatically computes and exposes key metrics to measure orchestration health:
+
 - **Success Rate**: The ratio of completed nodes to total terminal nodes (completed + failed) within a workflow execution.
 - **Retry/Rollback Frequency**: The percentage of unique nodes that required at least one retry or triggered a rollback state.
-- **MTTR (Mean Time To Recovery)**: A **Recovery Delay Proxy** measuring the average delay (wait time) introduced by retry policies and rollback transitions.
+- **Fallback Count**: The number of explicit artifact fallback recoveries performed during workflow execution.
+- **MTTR (Mean Time To Recovery)**: A **Recovery Delay Proxy** measuring the average delay introduced by retry and rollback recovery mechanisms rather than full wall-clock restoration time.
 - **E2E Latency**: The total wall-clock duration of the workflow execution from start to finish.
 
 ---
@@ -259,6 +278,9 @@ Deterministic tests use controlled agent responses to verify:
 - approval workflow behavior
 - workspace boundaries
 - application behavior
+- retries and bounded replanning
+- rollback compensation
+- artifact fallback and downstream artifact propagation
 
 These tests should provide stable CI-friendly verification.
 
@@ -280,9 +302,9 @@ The orchestration engine and target application use Java 21 and Spring Boot, kee
 
 ### Explicit Orchestration Model
 
-Workflow state, nodes, entry/exit gates, artifacts, approvals, decision lineage, sequential/parallel paths, and bounded replanning behavior are represented explicitly in the application.
+Workflow state, nodes, entry/exit gates, artifacts, approvals, decision lineage, sequential/parallel paths, fallback, and bounded replanning behavior are represented explicitly in the application.
 
-This makes workflow behavior inspectable and allows domain-specific governance rules to remain under application control. The engine handles synchronization between parallel paths (e.g., waiting for both implementation and testing to complete before validation).
+This makes workflow behavior inspectable and allows domain-specific governance rules to remain under application control. The engine handles synchronization between parallel paths, such as waiting for both implementation and testing to complete before validation.
 
 The trade-offs and possible use of an agent orchestration framework such as LangGraph are discussed separately in the project's design documentation.
 
@@ -300,13 +322,15 @@ This repository is a prototype intended to demonstrate agentic SDLC architecture
 
 It demonstrates:
 
-- sequential/parallel paths with synchronization
-- bounded retries, fallback (replanning), rollback compensation and safe-stop
+- sequential and parallel paths with synchronization
+- bounded retries
+- explicit artifact fallback to previous active outputs
+- bounded dynamic replanning
+- rollback compensation and safe-stop controls
 - policy guardrails
-- audit/traceability via decision lineage
-- reliability metrics including success rate, retry/rollback frequency, MTTR and E2E latency
-- dynamic replanning
+- audit and traceability through decision lineage
+- reliability metrics including success rate, retry/rollback frequency, fallback count, MTTR recovery-delay proxy, and E2E latency
 - controlled agent autonomy with human oversight
-- greenfield, brownfield and ambiguous requirement scenarios
+- greenfield, brownfield, and ambiguous-requirement scenarios
 
 It is not intended to represent a complete production SDLC platform. Production adoption would require additional consideration around areas such as persistent workflow state, distributed execution, authentication and authorization, secrets management, production observability, model cost controls, and operational recovery.
