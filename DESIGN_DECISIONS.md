@@ -29,5 +29,35 @@
 
 ---
 
-[Sections for Engine, Scenarios, and Trade-offs to follow]
+## 4. Agentic Orchestration
+
+**Decision:** Implement the orchestration model directly using explicit workflow nodes, execution state, artifacts, approval gates, policies, retries, and decision lineage.
+
+**Rationale:** Keeping these concepts explicit provides visibility and control over workflow execution and allows SDLC-specific governance behavior to remain part of the application model.
+
+### Custom Orchestration vs. LangGraph
+
+The custom orchestration approach provides direct control over execution and governance and can remain a viable production model where customized workflow semantics and minimal framework coupling are priorities.
+
+LangGraph could have reduced development time by providing graph execution, state management, checkpointing, and human-in-the-loop primitives out of the box. It also introduces another framework abstraction and learning curve.
+
+**Learning:** A future iteration should evaluate LangGraph earlier and consider using it for generic orchestration mechanics while retaining domain-specific governance, artifacts, validation, and safety controls in the application.
+
+---
+
+## 5. Bounded Agent Access
+
+**Decision:** Engineering agents interact with the codebase through explicitly bounded workspace tools.
+
+**Rationale:** Agent capabilities should be narrower than the permissions of the process hosting them. Restricting accessible source roots reduces the blast radius of generated changes and makes permitted modifications explicit.
+
+---
+
+## 6. Deterministic and Live Agent Testing
+
+**Decision:** Maintain both deterministic tests using controlled model responses and opt-in live tests using a configured LLM.
+
+**Rationale:** Deterministic tests provide repeatable verification of orchestration behavior, while live tests demonstrate that prompts and agent boundaries work with real model behavior.
+
+**Trade-off:** Live model output is probabilistic and requires external credentials, so live tests are kept separate from the default deterministic test path.
 

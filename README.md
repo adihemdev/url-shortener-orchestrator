@@ -1,100 +1,307 @@
 # Agentic SDLC Orchestration Engine for URL Shortener Service
 
-A production-grade Java and Spring Boot prototype demonstrating controlled agentic autonomy, a deterministic state machine control plane, enterprise governance, and end-to-end SDLC automation.
+A Java and Spring Boot prototype demonstrating governed agentic SDLC orchestration across greenfield, brownfield, and ambiguous-requirement workflows.
+
+The engine combines deterministic workflow control with LLM-driven engineering agents, bounded workspace access, approval gates, decision lineage, testing, and validation.
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
-The system is engineered with a strict architectural separation between the target application domain and the agentic control plane:
+The project separates the target application from the agentic orchestration engine:
 
 ```text
 url-shortener-orchestrator/
 ├── src/main/java/com/cs/urlshortenerorchestrator/
-│   ├── targetapp/                 # Layer 1: URL Shortener Domain (REST APIs, Data Layer)
-│   └── engine/                    # Layer 2: Agentic Orchestration Control Plane
-│       ├── state/                 # Explicit State Machine & DAG Graph Execution
-│       ├── governance/            # Human-in-the-Loop (HITL) Checkpoints & Policy Gates
-│       ├── metrics/               # Audit Logging, MTTR, & Success Rate Tracking
-│       └── execution/             # Copilot SDK / LLM Client Integration
-
+│   ├── targetapp/              # URL Shortener application
+│   └── engine/                 # Agentic SDLC orchestration engine
+│       ├── agent/              # Engineering agents and bounded tools
+│       ├── domain/             # Workflow, artifact, decision and policy model
+│       └── execution/          # Workflow execution and governance
+│
+└── src/test/java/com/cs/urlshortenerorchestrator/
+    ├── targetapp/              # Application tests
+    ├── engine/                 # Deterministic orchestration tests
+    └── analytics/orchestration # Live agent scenario tests
 ```
 
-### Workflow Orchestration & Control Flow Model
+### Workflow Model
 
-The engine implements a stateful, non-linear orchestration control plane using an explicit Directed Acyclic Graph (DAG) with strict entry and exit gates, supporting:
+The engine represents the SDLC as an explicit workflow graph with controlled transitions between engineering stages.
 
-* **DAG Execution & Synchronization**
-* **Immutable Decision Lineage**
-* **Adaptive Re-Planning**
+Depending on the scenario, the workflow can include:
 
-The lifecycle stages execute as follows:
-1. **Requirement Analysis:** Interprets raw intent, identifies ambiguity, and normalizes input into a clear engineering problem.
-2. **Task Decomposition:** Converts high-level requirements into actionable tasks with explicit dependencies and sequencing.
-3. **Architecture Design:** Formulates database schema updates, API contracts, and component changes.
-4. **Implementation:** Produces production-quality code and schema definitions.
-5. **Testing & Validation:** Executes automated tests and validation suites.
-6. **Documentation & Release Readiness:** Compiles documentation and prepares the build for deployment sign-off.
+1. Requirement analysis
+2. Impact analysis
+3. Architecture / implementation planning
+4. Implementation
+5. Testing
+6. Validation
+7. Human approval checkpoints
+8. Release-readiness decisions
 
----
-
-## ⚙️ The Three Demanded Scenarios
-
-This engine processes three distinct operational pathways:
-
-1. **Greenfield Scenario:** Bootstraps brand-new feature requirements from scratch (e.g., adding custom short-link aliases with expiration timestamps).
-2. **Brownfield Scenario:** Points the orchestrator at an existing component to execute refactoring or performance optimization (e.g., introducing a caching layer to the redirect lookup path).
-3. **Ambiguous Scenario:** Intercepts vague prompts , routes them through the requirement analysis node to identify gaps, pauses execution for operator input, and normalizes the task list.
+The orchestration layer remains deterministic about **what may execute and when**, while LLM agents perform bounded engineering tasks within those constraints.
 
 ---
 
-## 🛡️ Governance, Safety, & Guardrails
+## Demonstrated Scenarios
 
-* **Human-in-the-Loop (HITL) Checkpoints:** High-impact operations (e.g. database schema changes, promoting builds to release readiness) trigger an automatic pause in the state machine, requiring an explicit REST API or CLI sign-off to proceed.
-* **Resiliency & Self-Healing:** Test and compilation failures are intercepted in real-time, incrementing bounded retry counters and routing context back upstream to correct implementation flaws.
-* **Auditability & Metrics:** Every pipeline execution writes immutable audit records tracking success rates, rollback frequencies, and mean time to resolution (MTTR).
-* **Enforcement Mechanism:** High-impact checkpoints transition the state machine into a `WAITING_FOR_APPROVAL` mode, locking execution until an explicit REST API sign-off or CLI signal resumes the DAG. Failures automatically trip bounded retry limits before triggering automated rollbacks and safe-stops.
+The project exercises three agentic SDLC pathways.
+
+### 1. Greenfield
+
+The greenfield scenario demonstrates building a new capability from engineering requirements and upstream artifacts.
+
+It exercises:
+
+- task-oriented agent execution
+- bounded source generation
+- artifact propagation between SDLC stages
+- automated test generation
+- validation
+- workflow governance
+
+### 2. Brownfield
+
+The brownfield scenario operates against the existing URL shortener application.
+
+The agent:
+
+- inspects the existing codebase
+- performs impact analysis
+- identifies behavior that must be preserved
+- adds DELETE support to the existing application
+- updates existing tests
+- executes validation
+- remains restricted to explicitly permitted workspace roots
+
+This demonstrates modifying an existing system without giving the agent unrestricted repository access.
+
+### 3. Ambiguous Requirements
+
+The ambiguous-requirement scenario begins with an intentionally underspecified request:
+
+> Users need more control over their shortened URLs. Add the necessary support without breaking existing behavior.
+
+The analysis agent inspects the existing application and distinguishes:
+
+- known codebase facts
+- unresolved requirements
+- clarification questions
+- unsafe assumptions
+
+When material ambiguity remains, implementation is explicitly blocked.
+
+The scenario also demonstrates iterative clarification. A partial clarification may still be rejected when consequential API or product decisions remain unresolved. Once the stakeholder provides sufficient clarification, the requirement is reassessed and downstream planning is allowed to proceed through the existing approval and decision-governance path.
+
+The feature used for clarification is intentionally not implemented because the greenfield and brownfield scenarios already demonstrate implementation, testing, and validation behavior.
+
+See `docs/scenarios/AMBIGUOUS_REQUIREMENTS.md` for the detailed scenario.
 
 ---
 
-## 🚀 Setup & Execution Instructions
+## Governance and Safety
 
-* **Tech Stack Note:** Built on Java 21 LTS, leveraging Virtual Threads for high-throughput concurrent agent execution and records/sealed classes for type-safe domain modeling.
+Agent execution is constrained by the orchestration engine rather than allowing unrestricted autonomous changes.
+
+### Bounded Workspace Access
+
+Engineering agents access files through a bounded workspace abstraction.
+
+Only explicitly configured source or test roots may be read or modified. Attempts to access paths outside those roots are rejected.
+
+This prevents an implementation agent from freely modifying areas such as orchestration internals, repository metadata, or unrelated application code.
+
+### Human Approval
+
+Workflow nodes can require an approval gate before downstream execution proceeds.
+
+Approval decisions are captured through the workflow's existing decision and audit mechanisms, allowing human judgment to remain part of consequential workflow transitions.
+
+### Ambiguity Blocking
+
+The analysis agent can explicitly determine that a requirement is not sufficiently specified.
+
+Rather than inventing missing product requirements, it can return:
+
+- unresolved ambiguities
+- clarification questions
+- unsafe assumptions
+- an explicit implementation-blocked decision
+
+### Decision Lineage and Auditability
+
+Workflow execution records decisions and execution events so that important transitions can be traced back to their originating workflow and execution context.
+
+### Testing and Validation
+
+Implementation and testing agents operate as separate responsibilities. Generated changes can subsequently be exercised by deterministic application tests and validation stages before the workflow proceeds.
+
+---
+
+## URL Shortener Application
+
+The repository includes a Spring Boot URL shortener that acts as the target application for the orchestration scenarios.
+
+### Core API Endpoints
+
+- **Create Short Link**  
+  `POST /api/v1/urls`
+
+- **Resolve Short Link**  
+  `GET /api/v1/urls/{shortCode}`
+
+- **Delete Short Link**  
+  `DELETE /api/v1/urls/{shortCode}`
+
+DELETE removes an existing short-code mapping and returns `404 Not Found` when the mapping does not exist.
+
+---
+
+## Setup
 
 ### Prerequisites
 
-* Java 21 or higher
-* Maven 3.8+
+- Java 21+
+- Maven 3.8+ or the included Maven wrapper
 
-### Build Instructions
+### Build
 
-Clone the repository, configure your environment settings, and build the project using Maven:
-
-```bash
-mvn clean install
-``` 
-or 
 ```bash
 ./mvnw clean install
 ```
 
-### Run Instructions
+The system can also be built with a locally installed Maven distribution:
 
-Start the Spring Boot application:
+```bash
+mvn clean install
+```
+
+### Run the Application
 
 ```bash
 ./mvnw spring-boot:run
-
 ```
-### Core API Endpoints
-
-* **Create Short Link:** `POST /api/v1/urls` — Generates a new short code for a given long URL.
-* **Redirection:** `GET /api/v1/urls/{shortCode}` — Resolves the short code and redirects the client to the target URL.
-
 
 ---
 
-## ⚖️ Testing Approach, Limitations, and Trade-offs
+## LLM Configuration
 
-* **Testing Strategy:** Combines unit tests for state machine DAG transitions with integration tests verifying core URL shortener database behavior.
-* **Trade-offs:** Employs an embedded H2 database for streamlined local execution over distributed production clusters, and supports mock runtime fallback adapters to guarantee deterministic pipeline demonstrations.
+The project separates deterministic tests from tests that make real LLM calls.
+
+### Deterministic Tests
+
+Normal unit and integration tests do **not** require an LLM API key.
+
+Run them with:
+
+```bash
+unset LIVE_AGENT_TESTS
+./mvnw clean test
+```
+
+Live-agent tests are skipped unless explicitly enabled.
+
+### Live Agent Tests
+
+Live tests require access to an OpenAI-compatible model endpoint.
+
+Configure:
+
+```bash
+export LLM_BASE_URL="<openai-compatible-base-url>"
+export LLM_MODEL="<model-name>"
+export LLM_API_KEY="<api-key>"
+```
+
+Then enable live tests:
+
+```bash
+export LIVE_AGENT_TESTS=true
+```
+
+For example, run the live ambiguity scenario with:
+
+```bash
+LIVE_AGENT_TESTS=true \
+./mvnw -Dtest=LiveAmbiguityAssessmentTest test
+```
+
+A live clarified-requirement assessment can be run with:
+
+```bash
+LIVE_AGENT_TESTS=true \
+./mvnw -Dtest=LiveClarifiedRequirementAssessmentTest test
+```
+
+Credentials must be provided through environment variables and must not be committed to the repository.
+
+---
+
+## Deterministic vs. Live Testing
+
+The project intentionally uses both deterministic and live-agent tests.
+
+### Deterministic Tests
+
+Deterministic tests use controlled agent responses to verify:
+
+- orchestration behavior
+- parsing and structured agent outputs
+- ambiguity blocking
+- approval workflow behavior
+- workspace boundaries
+- application behavior
+
+These tests should provide stable CI-friendly verification.
+
+### Live Agent Tests
+
+Live tests make actual model calls to verify that the orchestration and prompts behave correctly with a real LLM.
+
+Because model output is probabilistic, these tests are inherently less deterministic than the standard test suite.
+
+Some live implementation and testing scenarios may modify files within explicitly permitted workspace roots. Run those scenarios against a clean working tree or isolated branch when inspecting generated changes.
+
+---
+
+## Technology Choices
+
+### Java 21 and Spring Boot
+
+The orchestration engine and target application use Java 21 and Spring Boot, keeping the agentic workflow integrated with a conventional enterprise application stack.
+
+### Explicit Orchestration Model
+
+Workflow state, nodes, artifacts, approvals, decisions, retries, and execution behavior are represented explicitly in the application rather than being hidden behind an external orchestration framework.
+
+This makes workflow behavior inspectable and allows domain-specific governance rules to remain under application control.
+
+The trade-offs and possible use of an agent orchestration framework such as LangGraph are discussed separately in the project's design documentation.
+
+### OpenAI-Compatible Agent Client
+
+LLM access is isolated behind an agent-client abstraction.
+
+The orchestration and engineering-agent logic therefore depends on the application's agent interface rather than directly embedding provider-specific calls throughout the workflow implementation.
+
+---
+
+## Current Scope
+
+This repository is a prototype intended to demonstrate agentic SDLC architecture and governance patterns.
+
+It demonstrates:
+
+- deterministic workflow orchestration
+- LLM-backed engineering agents
+- greenfield development
+- brownfield impact analysis and modification
+- ambiguous-requirement detection
+- human approval checkpoints
+- bounded filesystem access
+- artifact propagation
+- testing and validation
+- decision and execution auditability
+
+It is not intended to represent a complete production SDLC platform. Production adoption would require additional consideration around areas such as persistent workflow state, distributed execution, authentication and authorization, secrets management, production observability, model cost controls, and operational recovery.

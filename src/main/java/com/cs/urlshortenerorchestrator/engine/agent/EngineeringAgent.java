@@ -439,6 +439,127 @@ public class EngineeringAgent {
                 .collect(Collectors.joining("\n"));
     }
 
+    public AmbiguityAssessment assessAmbiguity(
+            EngineeringTask task) {
+
+        if (task.role() != AgentRole.ANALYSIS) {
+            throw new IllegalArgumentException(
+                    "Ambiguity assessment requires ANALYSIS role"
+            );
+        }
+
+        if (task.upstreamArtifacts() == null
+                || task.upstreamArtifacts().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Ambiguity assessment requires existing code context"
+            );
+        }
+
+        if (task.objective() == null
+                || task.objective().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Requirement required for ambiguity assessment"
+            );
+        }
+
+        String artifactContext =
+                buildTestingContext(
+                        task.upstreamArtifacts()
+                );
+
+        String constraintContext =
+                buildConstraintContext(
+                        task.constraints()
+                );
+
+        String systemPrompt = """
+        You are a senior software engineer reviewing an incoming change request
+        against an existing application.
+
+        Determine whether the request is sufficiently specified to permit a
+        safe implementation.
+
+        Important rules:
+
+        - Inspect the existing code to establish known facts.
+        - Distinguish facts from assumptions.
+        - Do not invent product requirements.
+        - Do not choose among materially different behaviors when stakeholder
+          intent is unknown.
+        - Identify ambiguities that could materially change API behavior,
+          persistence, security, compatibility, or implementation scope.
+        - Ask only clarification questions that are necessary to unblock a
+          safe implementation.
+        - If consequential ambiguity remains, implementationBlocked must be true.
+        - Do not generate or modify source code.
+
+        Return ONLY JSON:
+
+        {
+          "sufficientlySpecified": true,
+          "implementationBlocked": false,
+          "knownFacts": [
+            "fact established from the existing application"
+          ],
+          "ambiguities": [
+            "material unresolved requirement"
+          ],
+          "clarificationQuestions": [
+            "question requiring stakeholder input"
+          ],
+          "unsafeAssumptions": [
+            "assumption the implementation should not make"
+          ],
+          "summary": "concise assessment"
+        }
+
+        JSON must be strictly valid RFC 8259 JSON.
+        Do not include markdown fences or explanatory prose outside JSON.
+        """;
+
+        String userPrompt = """
+        Requested change:
+
+        %s
+
+        Constraints:
+
+        %s
+
+        Existing application context:
+
+        %s
+        """.formatted(
+                task.objective(),
+                constraintContext,
+                artifactContext
+        );
+
+        AgentResponse response =
+                agentClient.execute(
+                        systemPrompt,
+                        userPrompt
+                );
+
+        try {
+            String rawContent =
+                    normalizeJsonResponse(
+                            response.content()
+                    );
+
+            return objectMapper.readValue(
+                    rawContent,
+                    AmbiguityAssessment.class
+            );
+
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Analysis agent returned invalid ambiguity-assessment JSON",
+                    e
+            );
+        }
+    }
+
     public ImpactAnalysis analyze(
             EngineeringTask task) {
 
