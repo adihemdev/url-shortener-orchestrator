@@ -113,6 +113,16 @@ public class WorkflowState {
         return artifacts.get(artifactId);
     }
 
+    public void deactivateArtifactsFromExecution(String nodeId, String executionId) {
+        List<String> ids = nodeToArtifactIds.get(nodeId);
+        if (ids != null) {
+            ids.removeIf(artifactId -> {
+                Artifact artifact = artifacts.get(artifactId);
+                return artifact != null && executionId.equals(artifact.producedByExecutionId());
+            });
+        }
+    }
+
     public void reopenNodesForReplan(Set<String> nodeIds) {
         completedNodeIds.removeAll(nodeIds);
         failedNodes.keySet().removeAll(nodeIds);

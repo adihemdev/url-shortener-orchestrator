@@ -19,6 +19,7 @@ public class ExecutionMetrics {
     private int retriedNodes;
     private int rolledBackNodes;
     private int replannedCount;
+    private int fallbackCount;
     private final List<Long> nodeLatencies = new ArrayList<>();
     private final List<Long> approvalWaitTimes = new ArrayList<>();
     private final List<Long> retryDelayTotals = new ArrayList<>();
@@ -96,6 +97,10 @@ public class ExecutionMetrics {
 
     public void incrementReplannedCount() {
         this.replannedCount++;
+    }
+
+    public void incrementFallbackCount() {
+        this.fallbackCount++;
     }
 }
 

@@ -254,7 +254,7 @@ public class WorkflowExecutor {
             // Policy enforcement: check if any enforceable policies block execution
             validatePolicies(node);
         } catch (ValidationException e) {
-            handleGateFailure(node, e, "entry gate or policy validation failed");
+            handleGateFailure(node, null, e, "entry gate or policy validation failed");
             return;
         }
 
@@ -266,7 +266,7 @@ public class WorkflowExecutor {
             try {
                 validateExitGate(node, execution);
             } catch (ValidationException e) {
-                handleGateFailure(node, e, "exit gate validation failed");
+                handleGateFailure(node, execution, e, "exit gate validation failed");
                 return;
             }
 
@@ -494,7 +494,7 @@ public class WorkflowExecutor {
         }
     }
 
-    private void handleGateFailure(WorkflowNode node, ValidationException e, String reason) {
+    private void handleGateFailure(WorkflowNode node, Execution execution, ValidationException e, String reason) {
         auditLog("GATE_FAILURE", node.getId() + ": " + reason, node.getId());
 
         Gate gate = node.getExitGate() != null ? node.getExitGate() : node.getEntryGate();
@@ -510,9 +510,46 @@ public class WorkflowExecutor {
                 auditLog("REPLAN_TRIGGERED", "Triggering replan due to gate failure", node.getId());
                 triggerReplan(node, reason);
                 break;
+            case FALLBACK_TO_PREVIOUS:
+                handleArtifactFallback(node, execution, reason);
+                break;
             case WARN:
                 auditLog("GATE_WARNING", "Gate validation warning: " + reason, node.getId());
                 break;
+        }
+    }
+
+    private void handleArtifactFallback(WorkflowNode node, Execution execution, String reason) {
+        if (execution == null) {
+            // Fallback not possible without an execution to roll back
+            workflow.getCurrentState().markNodeFailed(node.getId(),
+                new ExecutionFailure("Artifact fallback not possible: no failed execution provided",
+                    new Exception(reason), Instant.now()));
+            metrics.incrementFailedNodes();
+            return;
+        }
+
+        List<String> currentArtifactIds = workflow.getCurrentState().getArtifactIdsProducedByNode(node.getId());
+        
+        // Deactivate artifacts from the failed execution
+        workflow.getCurrentState().deactivateArtifactsFromExecution(node.getId(), execution.getId());
+        
+        List<String> remainingArtifactIds = workflow.getCurrentState().getArtifactIdsProducedByNode(node.getId());
+
+        if (remainingArtifactIds.isEmpty()) {
+            // No previous artifacts to fall back to
+            auditLog("FALLBACK_FAILED", "No previous artifacts found for fallback on " + node.getId(), node.getId());
+            workflow.getCurrentState().markNodeFailed(node.getId(),
+                new ExecutionFailure("Artifact fallback failed: no previous artifacts found",
+                    new Exception(reason), Instant.now()));
+            metrics.incrementFailedNodes();
+        } else {
+            // Success - fallback to remaining artifacts
+            metrics.incrementFallbackCount();
+            decisionRecorder.recordFallbackDecision(node.getId(), execution.getId(), reason, remainingArtifactIds);
+            workflow.getCurrentState().markNodeCompleted(node.getId());
+            metrics.incrementCompletedNodes();
+            auditLog("ARTIFACT_FALLBACK", "Successfully fell back to previous artifacts for " + node.getId(), node.getId());
         }
     }
 
