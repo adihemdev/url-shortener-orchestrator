@@ -35,6 +35,14 @@
 
 **Rationale:** Keeping these concepts explicit provides visibility and control over workflow execution and allows SDLC-specific governance behavior to remain part of the application model.
 
+#### Fallback and Recovery
+Fallback is implemented as governed recovery behavior through **Bounded Replanning** and **Safe-Stop** controls.
+- **Replanning**: Allows the engine to re-open upstream nodes and their dependencies upon failure, effectively "falling back" to an earlier stable state.
+- **Safe-Stop**: Prevents further execution when a failure occurs and no automated recovery is possible or permitted.
+
+#### Rollback Control
+The engine supports a **Rollback Compensation Hook**. When an approval gate is rejected for a reversible node, the `NodeExecutor.rollback` method is invoked with the configured `reversibleOperations`, allowing the system to programmatically undo side effects.
+
 ### Custom Orchestration vs. LangGraph
 
 The custom orchestration approach provides direct control over execution and governance and can remain a viable production model where customized workflow semantics and minimal framework coupling are priorities.
@@ -59,5 +67,15 @@ LangGraph could have reduced development time by providing graph execution, stat
 
 **Rationale:** Deterministic tests provide repeatable verification of orchestration behavior, while live tests demonstrate that prompts and agent boundaries work with real model behavior.
 
-**Trade-off:** Live model output is probabilistic and requires external credentials, so live tests are kept separate from the default deterministic test path.
+---
+
+## 7. Reliability Metrics
+
+**Decision:** Implement programmatic tracking of Success Rate, Retry Frequency, Rollback Frequency, MTTR, and E2E Latency.
+
+**Metrics Definitions & Accuracy:**
+- **Success Rate**: Calculated as `Completed Nodes / (Completed + Failed Nodes)`. Note: This evaluates the terminal status of attempted nodes in the current graph, rather than a global execution success rate.
+- **MTTR (Mean Time To Recovery)**: Implemented as a **Recovery Delay Proxy**. It measures the average time added by retries and rollbacks, rather than the wall-clock time from incident start to full service restoration.
+- **E2E Latency**: True wall-clock duration from workflow start to finish.
+- **Frequencies**: Node-density metrics (e.g., % of nodes that required a rollback) rather than raw event counts.
 

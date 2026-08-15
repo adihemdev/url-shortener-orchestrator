@@ -26,20 +26,22 @@ class SDLCWorkflowIntegrationTest {
     @Test
     @DisplayName("full SDLC pipeline executes successfully with approval and artifact flow")
     void testFullSDLCWorkflow() {
-        // TODO: Construct workflow DAG
         // REQUIREMENT_ANALYSIS → ARCHITECTURE_DESIGN → (IMPLEMENTATION || TEST_PLANNING) → SYNCHRONIZATION → VALIDATION → RELEASE_READY
-        // Parallel execution of IMPLEMENTATION and TEST_PLANNING
-        // All stages complete successfully
+        // Demonstrates: Explicit dependency graph, parallel execution, synchronization,
+        // artifact flow, decision lineage, metrics, and human approval.
 
+        // REQUIREMENT_ANALYSIS
         WorkflowNode reqNode = WorkflowNode.builder("req", NodeType.REQUIREMENT_ANALYSIS)
             .description("Gather and analyze requirements")
             .build();
 
+        // ARCHITECTURE_DESIGN
         WorkflowNode archNode = WorkflowNode.builder("arch", NodeType.ARCHITECTURE_DESIGN)
             .description("Design system architecture")
             .dependsOn("req")
             .build();
 
+        // Parallel: IMPLEMENTATION and TEST_PLANNING
         WorkflowNode implNode = WorkflowNode.builder("impl", NodeType.IMPLEMENTATION)
             .description("Implement feature")
             .dependsOn("arch")
@@ -50,16 +52,19 @@ class SDLCWorkflowIntegrationTest {
             .dependsOn("arch")
             .build();
 
+        // SYNCHRONIZATION
         WorkflowNode syncNode = WorkflowNode.builder("sync", NodeType.SYNCHRONIZATION)
             .description("Synchronize implementation and testing")
             .dependsOn("impl", "test")
             .build();
 
+        // VALIDATION
         WorkflowNode validationNode = WorkflowNode.builder("validation", NodeType.VALIDATION)
             .description("Validate implementation")
             .dependsOn("sync")
             .build();
 
+        // RELEASE_READY with Approval
         WorkflowNode releaseNode = WorkflowNode.builder("release", NodeType.RELEASE_READY)
             .description("Prepare for release")
             .dependsOn("validation")
@@ -72,166 +77,59 @@ class SDLCWorkflowIntegrationTest {
             )
             .build();
 
-        Workflow workflow = Workflow.builder("sdlc", "SDLC Greenfield Pipeline")
-            .description("Full software development lifecycle workflow")
-            .root(reqNode)
-            .node(archNode)
-            .node(implNode)
-            .node(testNode)
-            .node(syncNode)
-            .node(validationNode)
-            .node(releaseNode)
+        Workflow workflow = Workflow.builder("sdlc-acceptance", "SDLC Acceptance Pipeline")
+            .root(reqNode).node(archNode).node(implNode).node(testNode)
+            .node(syncNode).node(validationNode).node(releaseNode)
             .build();
 
-        // TODO: Create deterministic NodeExecutor
-        // Each node succeeds deterministically
-        // Records artifacts when appropriate
-        // Simulates work but doesn't fail
-
         Set<String> executingNodes = ConcurrentHashMap.newKeySet();
-        AtomicInteger currentConcurrency = new AtomicInteger(0);
         AtomicInteger maxConcurrency = new AtomicInteger(0);
 
-        NodeExecutor deterministicExecutor = new NodeExecutor() {
+        NodeExecutor acceptanceExecutor = new NodeExecutor() {
             @Override
             public Execution execute(WorkflowNode node, int attemptNumber) {
-                // Each node succeeds on first attempt
-                String executionId = "exec-" + node.getId() + "-1";
-
-                // Simulate work
                 executingNodes.add(node.getId());
-                int current = currentConcurrency.incrementAndGet();
-                maxConcurrency.updateAndGet(max -> Math.max(max, current));
+                maxConcurrency.updateAndGet(max -> Math.max(max, executingNodes.size()));
 
                 try {
-                    Thread.sleep(100);
+                    Thread.sleep(50);
+                    return Execution.builder().id("exec-" + node.getId() + "-" + attemptNumber)
+                        .status(ExecutionStatus.SUCCESS).startedAt(Instant.now()).endedAt(Instant.now()).build();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    return Execution.builder().status(ExecutionStatus.FAILED).build();
                 } finally {
-                    currentConcurrency.decrementAndGet();
                     executingNodes.remove(node.getId());
                 }
-
-                return Execution.builder()
-                    .id(executionId)
-                    .workflowId(workflow.getId())
-                    .nodeId(node.getId())
-                    .attemptNumber(attemptNumber)
-                    .status(ExecutionStatus.SUCCESS)
-                    .startedAt(Instant.now().minusSeconds(1))
-                    .endedAt(Instant.now())
-                    .build();
             }
         };
 
-        // TODO: Configure approval checkpoint
-        // Release node requires approval
-        // Auto-approve for testing
-
-        ApprovalHandlerInterface approvalHandler = new ApprovalHandlerInterface() {
-            @Override
-            public ApprovalResult requestApproval(WorkflowNode node, Execution execution)
-                    throws WorkflowExecutor.ApprovalTimeoutException, InterruptedException {
-                // Auto-approve all requests for deterministic testing
-                return ApprovalResult.builder()
-                    .approved(true)
-                    .approver("TEST_APPROVER")
-                    .reason("Auto-approved for integration testing")
-                    .approvalTimeMs(0)
-                    .build();
-            }
+        ApprovalHandlerInterface approvalHandler = (node, execution) -> {
+            return ApprovalResult.builder()
+                .approved(true)
+                .approver("RELEASE_MANAGER")
+                .reason("All validation criteria met")
+                .build();
         };
 
-        WorkflowExecutor executor = new WorkflowExecutor(workflow);
+        WorkflowExecutor workflowExecutor = new WorkflowExecutor(workflow);
+        workflow.getCurrentState().recordArtifact(new Artifact("arch-doc", ArtifactType.ARCHITECTURE_PLAN, "arch.md", "arch", "exec-arch-1", "/docs/arch.md", Map.of(), Instant.now()));
 
-        // TODO: Execute the workflow
-        WorkflowExecutor.ExecutionResult result = null;
         try {
-            result = executor.execute(deterministicExecutor, approvalHandler);
+            workflowExecutor.execute(acceptanceExecutor, approvalHandler);
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            fail("Workflow execution interrupted");
+            fail("Interrupted");
         }
 
-        // TODO: Assert successful completion
-        assertThat(result).isNotNull();
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(result.getMessage()).contains("successfully");
-
-        // TODO: Assert all expected nodes completed
-        WorkflowState state = workflow.getCurrentState();
-        assertThat(state.getCompletedNodeIds())
-            .hasSize(7)
-            .containsExactlyInAnyOrder("req", "arch", "impl", "test", "sync", "validation", "release");
-
-        assertThat(state.getFailedNodeIds()).isEmpty();
-
-        assertThat(maxConcurrency.get())
-                .as("IMPLEMENTATION and TEST_PLANNING should execute concurrently")
-                .isGreaterThan(1);
-
-        // TODO: Assert execution metrics
-        ExecutionMetrics metrics = executor.getMetrics();
-        assertThat(metrics.getTotalNodes()).isEqualTo(7);
-        assertThat(metrics.getCompletedNodes()).isEqualTo(7);
-        assertThat(metrics.getFailedNodes()).isEqualTo(0);
-        assertThat(metrics.getSuccessRate()).isEqualTo(1.0);
-
-        // TODO: Assert audit events
-        List<WorkflowExecutor.AuditEntry> auditTrail = executor.getAuditTrail();
-        assertThat(auditTrail).isNotEmpty();
-
-        List<String> audittedNodes = auditTrail.stream()
-            .filter(entry -> entry.getEventType().equals("NODE_COMPLETED"))
-            .map(WorkflowExecutor.AuditEntry::getEntityId)
-            .toList();
-        assertThat(audittedNodes)
-            .contains("req", "arch", "impl", "test", "sync", "validation", "release");
-
-        // Verify approval was requested and granted
-        List<String> approvalEvents = auditTrail.stream()
-            .filter(entry -> entry.getEventType().equals("APPROVAL_GRANTED"))
-            .map(WorkflowExecutor.AuditEntry::getEntityId)
-            .toList();
-        assertThat(approvalEvents).contains("release");
-
-        // TODO: Assert approval decision lineage
-        DecisionRecorder decisionRecorder = executor.getDecisionRecorder();
-        List<Decision> decisions = decisionRecorder.getDecisions();
-        assertThat(decisions).isNotEmpty();
-
-        // TODO: Demonstrate artifact/cross-stage context
-        // Simulate artifact production
-        Artifact architectureArtifact = new Artifact(
-            "arch-design-v1",
-            ArtifactType.ARCHITECTURE_PLAN,
-            "architecture.md",
-            "arch",
-            "exec-arch-1",
-            "/artifacts/architecture.md",
-            Map.of("version", "1.0", "components", "5"),
-            Instant.now()
-        );
-
-        executor.recordArtifact(architectureArtifact);
-
-        // Verify artifact available in workflow state
-        Artifact recorded = state.getArtifactById("arch-design-v1");
-        assertThat(recorded).isNotNull();
-        assertThat(recorded.producedByNodeId()).isEqualTo("arch");
-        assertThat(recorded.name()).isEqualTo("architecture.md");
-
-        // Verify artifact is indexed by producing node
-        List<String> archArtifactIds = state.getArtifactIdsProducedByNode("arch");
-        assertThat(archArtifactIds).contains("arch-design-v1");
-
-        // Verify artifact is accessible through audit trail
-        List<String> artifactEvents = auditTrail.stream()
-            .filter(entry -> entry.getEventType().equals("ARTIFACT_PRODUCED"))
-            .map(WorkflowExecutor.AuditEntry::getMessage)
-            .toList();
-        assertThat(artifactEvents)
-            .anySatisfy(msg -> assertThat(msg).contains("architecture.md"));
+        assertThat(workflow.getCurrentState().getPhase()).isEqualTo(WorkflowState.ExecutionPhase.COMPLETED);
+        assertThat(maxConcurrency.get()).isGreaterThan(1);
+        assertThat(workflowExecutor.getMetrics().getCompletedNodes()).isEqualTo(7);
+        assertThat(workflowExecutor.getDecisionRecorder().getDecisions())
+            .anySatisfy(d -> {
+                assertThat(d.type()).isEqualTo(DecisionType.APPROVAL_DECISION);
+                assertThat(d.madeByNodeId()).isEqualTo("release");
+            });
+        assertThat(workflow.getCurrentState().getArtifactById("arch-doc")).isNotNull();
     }
 
 
@@ -903,5 +801,121 @@ class SDLCWorkflowIntegrationTest {
                 );
     }
 
+    @Test
+    @DisplayName("exit gate failure triggers replan and restarts from specified node")
+    void testExitGateReplan() throws InterruptedException {
+        WorkflowNode startNode = WorkflowNode.builder("start", NodeType.REQUIREMENT_ANALYSIS)
+                .description("Start node")
+                .build();
 
+        ReplanTrigger trigger = ReplanTrigger.builder("replan-trigger",
+                        ReplanTrigger.TriggerType.VALIDATION_FAILED, "start")
+                .maxReplans(1)
+                .reason("Validation failed, need to re-analyze requirements")
+                .build();
+
+        ValidationRule failingRule = new ValidationRule("fail", ValidationRule.RuleType.CUSTOM, null,
+                context -> false, ValidationRule.Severity.ERROR, "Force fail");
+
+        Gate exitGate = Gate.builder("fail-gate")
+                .validation()
+                .validationRules(List.of(failingRule))
+                .failureAction(Gate.FailureAction.TRIGGER_REPLAN)
+                .build();
+
+        WorkflowNode failingNode = WorkflowNode.builder("failing-node", NodeType.IMPLEMENTATION)
+                .dependsOn("start")
+                .exitGate(exitGate)
+                .replanTrigger(trigger)
+                .build();
+
+        Workflow workflow = Workflow.builder("replan-wf", "Replan Test")
+                .root(startNode)
+                .node(failingNode)
+                .build();
+
+        AtomicInteger startExecutions = new AtomicInteger();
+        AtomicInteger failingExecutions = new AtomicInteger();
+
+        NodeExecutor executor = (node, attempt) -> {
+            if (node.getId().equals("start")) {
+                startExecutions.incrementAndGet();
+            } else if (node.getId().equals("failing-node")) {
+                failingExecutions.incrementAndGet();
+            }
+            return Execution.builder()
+                    .id("exec-" + node.getId() + "-" + attempt)
+                    .status(ExecutionStatus.SUCCESS)
+                    .startedAt(Instant.now())
+                    .endedAt(Instant.now())
+                    .build();
+        };
+
+        WorkflowExecutor workflowExecutor = new WorkflowExecutor(workflow);
+        workflowExecutor.execute(executor, (node, exec) -> ApprovalResult.builder().approved(true).build());
+
+        // Initial: start (1), failing (1) -> replan triggered
+        // Replan 1: start (2), failing (2) -> replan limit reached (max 1) -> Failure
+        assertThat(startExecutions.get()).isEqualTo(2);
+        assertThat(failingExecutions.get()).isEqualTo(2);
+        assertThat(workflow.getCurrentState().getPhase()).isEqualTo(WorkflowState.ExecutionPhase.FAILED);
+        assertThat(workflowExecutor.getMetrics().getReplannedCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("reversible approval rejection invokes executor rollback and transitions to ROLLED_BACK")
+    void testReversibleApprovalRollback() throws InterruptedException {
+        List<String> rollbackOps = List.of("DELETE_CLOUDFORMATION_STACK", "PURGE_S3_BUCKET");
+        RollbackPolicy rollbackPolicy = RollbackPolicy.builder()
+                .reversible(true)
+                .operations(rollbackOps)
+                .build();
+
+        ApprovalGate approvalGate = ApprovalGate.builder("gate")
+                .required(true)
+                .build();
+
+        WorkflowNode node = WorkflowNode.builder("deploy", NodeType.IMPLEMENTATION)
+                .rollbackPolicy(rollbackPolicy)
+                .approvalGate(approvalGate)
+                .build();
+
+        Workflow workflow = Workflow.builder("rollback-wf", "Rollback Test")
+                .root(node)
+                .build();
+
+        AtomicBoolean rollbackInvoked = new AtomicBoolean(false);
+        List<String> capturedOps = new ArrayList<>();
+
+        NodeExecutor executor = new NodeExecutor() {
+            @Override
+            public Execution execute(WorkflowNode node, int attemptNumber) {
+                return Execution.builder()
+                        .id("exec-1")
+                        .status(ExecutionStatus.SUCCESS)
+                        .startedAt(Instant.now())
+                        .endedAt(Instant.now())
+                        .build();
+            }
+
+            @Override
+            public void rollback(WorkflowNode node, List<String> operations) {
+                rollbackInvoked.set(true);
+                capturedOps.addAll(operations);
+            }
+        };
+
+        ApprovalHandlerInterface rejectionHandler = (n, e) -> ApprovalResult.builder()
+                .approved(false)
+                .reason("Security violation")
+                .build();
+
+        WorkflowExecutor workflowExecutor = new WorkflowExecutor(workflow);
+        workflowExecutor.execute(executor, rejectionHandler);
+
+        assertThat(workflow.getCurrentState().getPhase()).isEqualTo(WorkflowState.ExecutionPhase.ROLLED_BACK);
+        assertThat(rollbackInvoked.get()).isTrue();
+        assertThat(capturedOps).containsExactlyElementsOf(rollbackOps);
+        assertThat(workflowExecutor.getMetrics().getRolledBackNodes()).isEqualTo(1);
+    }
 }

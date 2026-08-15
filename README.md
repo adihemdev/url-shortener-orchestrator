@@ -112,11 +112,17 @@ Only explicitly configured source or test roots may be read or modified. Attempt
 
 This prevents an implementation agent from freely modifying areas such as orchestration internals, repository metadata, or unrelated application code.
 
-### Human Approval
+### Human Approval and Rollback
 
 Workflow nodes can require an approval gate before downstream execution proceeds.
 
-Approval decisions are captured through the workflow's existing decision and audit mechanisms, allowing human judgment to remain part of consequential workflow transitions.
+If an approval is rejected and the node is configured with a reversible `RollbackPolicy`, the engine invokes a **Rollback Compensation Hook** (`NodeExecutor.rollback`) to programmatically undo side effects.
+
+Approval decisions and rollback actions are captured through the workflow's existing decision and audit mechanisms.
+
+### Bounded Replanning and Fallback
+
+The engine supports governed recovery through **Bounded Replanning**. If an exit gate fails or retries are exhausted, the engine can trigger a replan that re-opens upstream dependencies, effectively "falling back" to a stable state to attempt a fix. If recovery is not possible, the system enters a **Safe-Stop** phase to prevent destructive automated progress.
 
 ### Ambiguity Blocking
 
@@ -133,9 +139,13 @@ Rather than inventing missing product requirements, it can return:
 
 Workflow execution records decisions and execution events so that important transitions can be traced back to their originating workflow and execution context.
 
-### Testing and Validation
+### Reliability Metrics
 
-Implementation and testing agents operate as separate responsibilities. Generated changes can subsequently be exercised by deterministic application tests and validation stages before the workflow proceeds.
+The engine programmatically computes and exposes:
+- **Success Rate**: Terminal node success ratio.
+- **Retry/Rollback Frequency**: Percentage of nodes requiring recovery.
+- **MTTR**: Recovery delay proxy (average time spent in retry/rollback transitions).
+- **E2E Latency**: Full wall-clock workflow duration.
 
 ---
 
