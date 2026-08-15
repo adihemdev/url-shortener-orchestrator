@@ -54,8 +54,8 @@ public class WorkflowExecutor {
     }
 
     /**
-     * Execute the workflow to completion.
-     * Demonstrates non-linear execution with retries, approvals, and rollbacks.
+     * Executes the workflow to completion.
+     * Manages parallel path execution, human approval gates, and failure recovery.
      */
     public ExecutionResult execute(NodeExecutor nodeExecutor, ApprovalHandlerInterface approvalHandler)
             throws InterruptedException {
@@ -283,7 +283,7 @@ public class WorkflowExecutor {
                         auditLog("APPROVAL_REJECTED", "Approval rejected for " + node.getId(), node.getId());
                         decisionRecorder.recordApprovalDecision(node.getId(), execution.getId(),
                             false, approval.getApprover(), approval.getReason());
-                        handleApprovalRejection(node);
+                        handleApprovalRejection(node, nodeExecutor);
                         return;
                     }
                 } catch (ApprovalTimeoutException e) {
@@ -464,10 +464,8 @@ public class WorkflowExecutor {
     }
 
     /**
-     * Validate enforceable policies at the current execution context.
-     * Creates ExecutionContext and checks if any policy would block execution.
-     * Minimal implementation: checks policy applicability and enforceability.
-     * Can be called before execution (execution = null) or after (with Execution).
+     * Enforces governance policies at the current execution context.
+     * Blocks execution if an enforceable policy would be violated.
      */
     private void validatePolicies(WorkflowNode node) throws ValidationException {
         // Create execution context from current runtime state (no execution yet)
@@ -518,13 +516,16 @@ public class WorkflowExecutor {
         }
     }
 
-    private void handleApprovalRejection(WorkflowNode node) throws InterruptedException {
+    private void handleApprovalRejection(WorkflowNode node, NodeExecutor nodeExecutor) throws InterruptedException {
         auditLog("APPROVAL_REJECTED", "Initiating rollback for " + node.getId(), node.getId());
 
         RollbackPolicy rollback = node.getRollbackPolicy();
         if (rollback.isReversible()) {
             metrics.incrementRolledBackNodes();
             workflow.getCurrentState().setPhase(WorkflowState.ExecutionPhase.ROLLED_BACK);
+
+            // Execute compensating operations
+            nodeExecutor.rollback(node, rollback.getReversibleOperations());
 
             decisionRecorder.recordRollbackDecision(node.getId(), null,
                 "Approval rejected", rollback.getReversibleOperations());
@@ -536,6 +537,10 @@ public class WorkflowExecutor {
         }
     }
 
+    /**
+     * Initiates governed recovery through bounded replanning.
+     * Re-opens upstream dependencies to allow corrective action.
+     */
     private void triggerReplan(
             WorkflowNode failedNode,
             String reason) {

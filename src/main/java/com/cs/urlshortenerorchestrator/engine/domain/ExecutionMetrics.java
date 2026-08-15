@@ -35,6 +35,11 @@ public class ExecutionMetrics {
         return workflowEndedAt.toEpochMilli() - workflowStartedAt.toEpochMilli();
     }
 
+    /**
+     * Calculates the Mean Time To Recovery (MTTR).
+     * Note: This is a Recovery Delay Proxy measuring the average time added by
+     * retries and rollbacks, rather than wall-clock service restoration time.
+     */
     public long getAverageMTTRMs() {
         if (retriedNodes == 0 && rolledBackNodes == 0) return 0;
         long totalWait = retryDelayTotals.stream().mapToLong(Long::longValue).sum();

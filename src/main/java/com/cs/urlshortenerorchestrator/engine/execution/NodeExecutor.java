@@ -7,17 +7,28 @@ import lombok.Builder;
 import lombok.Getter;
 import java.time.Instant;
 
-/**
- * NodeExecutor: Executes individual workflow nodes.
- * Can be implemented by different agents/functions.
- * Demonstrates controlled agent autonomy within governance framework.
- */
+    /**
+     * Executes individual workflow nodes and manages their side effects.
+     * Can be implemented by engineering agents, automated functions, or scripts.
+     * Provides the integration point for bounded agent autonomy.
+     */
 public interface NodeExecutor {
     /**
-     * Execute a node. May be implemented by AI agents, functions, or scripts.
-     * Must return execution result with status and error details.
+     * Executes a node and returns the result.
+     * @param node The node to execute
+     * @param attemptNumber Current retry attempt number
      */
     Execution execute(WorkflowNode node, int attemptNumber) throws InterruptedException;
+
+    /**
+     * Invokes the rollback compensation hook.
+     * Triggered when an approval is rejected for a reversible node.
+     * @param node The node being rolled back
+     * @param operations The specific reversible operations to perform
+     */
+    default void rollback(WorkflowNode node, java.util.List<String> operations) throws InterruptedException {
+        // Default no-op for non-reversible implementations
+    }
 }
 
 /**
