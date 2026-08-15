@@ -294,6 +294,7 @@ public class WorkflowExecutor {
             }
 
             // Mark node as completed
+            recordNodeRecovery(node.getId());
             workflow.getCurrentState().markNodeCompleted(node.getId());
             metrics.incrementCompletedNodes();
             auditLog("NODE_COMPLETED", "Completed " + node.getId(), node.getId());
@@ -348,11 +349,13 @@ public class WorkflowExecutor {
 
                 // Check if exception should trigger retry
                 if (!shouldRetry(lastExecution, policy)) {
+                    workflow.getCurrentState().recordNodeFirstFailure(node.getId(), lastExecution.getEndedAt());
                     return lastExecution;
                 }
 
                 // Retry with backoff
                 if (attempt < policy.getMaxRetries()) {
+                    workflow.getCurrentState().recordNodeFirstFailure(node.getId(), lastExecution.getEndedAt());
                     int delaySeconds = policy.calculateDelaySeconds(attempt);
 
                     if (totalDelayMs + (delaySeconds * 1000L) > (policy.getMaxDurationSeconds() * 1000L)) {
@@ -497,6 +500,10 @@ public class WorkflowExecutor {
     private void handleGateFailure(WorkflowNode node, Execution execution, ValidationException e, String reason) {
         auditLog("GATE_FAILURE", node.getId() + ": " + reason, node.getId());
 
+        // Record first failure detection for MTTR
+        Instant detectionTime = (execution != null) ? execution.getEndedAt() : Instant.now();
+        workflow.getCurrentState().recordNodeFirstFailure(node.getId(), detectionTime);
+
         Gate gate = node.getExitGate() != null ? node.getExitGate() : node.getEntryGate();
         Gate.FailureAction action = gate != null ? gate.getFailureAction() : Gate.FailureAction.BLOCK;
 
@@ -545,12 +552,20 @@ public class WorkflowExecutor {
             metrics.incrementFailedNodes();
         } else {
             // Success - fallback to remaining artifacts
+            recordNodeRecovery(node.getId());
             metrics.incrementFallbackCount();
             decisionRecorder.recordFallbackDecision(node.getId(), execution.getId(), reason, remainingArtifactIds);
             workflow.getCurrentState().markNodeCompleted(node.getId());
             metrics.incrementCompletedNodes();
             auditLog("ARTIFACT_FALLBACK", "Successfully fell back to previous artifacts for " + node.getId(), node.getId());
         }
+    }
+
+    private void recordNodeRecovery(String nodeId) {
+        workflow.getCurrentState().getAndClearNodeFirstFailure(nodeId).ifPresent(firstFail -> {
+            long duration = Instant.now().toEpochMilli() - firstFail.toEpochMilli();
+            metrics.recordRecovery(duration);
+        });
     }
 
     private void handleApprovalRejection(WorkflowNode node, NodeExecutor nodeExecutor) throws InterruptedException {

@@ -163,7 +163,7 @@ The engine programmatically computes and exposes key metrics to measure orchestr
 - **Success Rate**: The ratio of completed nodes to total terminal nodes (completed + failed) within a workflow execution.
 - **Retry/Rollback Frequency**: The percentage of unique nodes that required at least one retry or triggered a rollback state.
 - **Fallback Count**: The number of explicit artifact fallback recoveries performed during workflow execution.
-- **MTTR (Mean Time To Recovery)**: A **Recovery Delay Proxy** measuring the average delay introduced by retry and rollback recovery mechanisms rather than full wall-clock restoration time.
+- **MTTR (Mean Time To Recovery)**: The average wall-clock duration from first failure detection until successful recovery. Recovery may occur through retry/replan or artifact fallback. Unrecovered terminal failures are excluded from the MTTR average.
 - **E2E Latency**: The total wall-clock duration of the workflow execution from start to finish.
 
 ---
@@ -329,7 +329,7 @@ It demonstrates:
 - rollback compensation and safe-stop controls
 - policy guardrails
 - audit and traceability through decision lineage
-- reliability metrics including success rate, retry/rollback frequency, fallback count, MTTR recovery-delay proxy, and E2E latency
+- reliability metrics including success rate, retry/rollback frequency, fallback count, wall-clock MTTR, and E2E latency
 - controlled agent autonomy with human oversight
 - greenfield, brownfield, and ambiguous-requirement scenarios
 

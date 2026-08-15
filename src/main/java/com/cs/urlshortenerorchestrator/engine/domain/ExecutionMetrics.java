@@ -20,6 +20,8 @@ public class ExecutionMetrics {
     private int rolledBackNodes;
     private int replannedCount;
     private int fallbackCount;
+    private long totalRecoveryDurationMs;
+    private int recoveredNodesCount;
     private final List<Long> nodeLatencies = new ArrayList<>();
     private final List<Long> approvalWaitTimes = new ArrayList<>();
     private final List<Long> retryDelayTotals = new ArrayList<>();
@@ -38,14 +40,12 @@ public class ExecutionMetrics {
 
     /**
      * Calculates the Mean Time To Recovery (MTTR).
-     * Note: This is a Recovery Delay Proxy measuring the average time added by
-     * retries and rollbacks, rather than wall-clock service restoration time.
+     * Measures the average wall-clock duration from first failure detection
+     * until successful recovery.
      */
     public long getAverageMTTRMs() {
-        if (retriedNodes == 0 && rolledBackNodes == 0) return 0;
-        long totalWait = retryDelayTotals.stream().mapToLong(Long::longValue).sum();
-        int recoveryCount = retriedNodes + rolledBackNodes;
-        return recoveryCount > 0 ? totalWait / recoveryCount : 0;
+        if (recoveredNodesCount == 0) return 0;
+        return totalRecoveryDurationMs / recoveredNodesCount;
     }
 
     public long getAverageNodeLatencyMs() {
@@ -73,6 +73,11 @@ public class ExecutionMetrics {
 
     public void recordRetryDelayTotal(long ms) {
         retryDelayTotals.add(ms);
+    }
+
+    public void recordRecovery(long durationMs) {
+        this.totalRecoveryDurationMs += durationMs;
+        this.recoveredNodesCount++;
     }
 
     public long getTotalApprovalWaitTimeMs() {
