@@ -50,16 +50,14 @@ The project exercises three agentic SDLC pathways.
 
 ### 1. Greenfield
 
-The greenfield scenario demonstrates building a new capability from engineering requirements and upstream artifacts.
-
-It exercises:
-
-- task-oriented agent execution
-- bounded source generation
-- artifact propagation between SDLC stages
-- automated test generation
-- validation
-- workflow governance
+The greenfield scenario demonstrates building a new analytics capability from scratch. The engine orchestrates a complete SDLC pipeline:
+- **Requirement Analysis**: Agent identifies tasks from an ambiguous prompt.
+- **Decomposition**: Tasks are sequenced into a dependency graph.
+- **Implementation & Testing**: Parallel execution of code generation and test suite creation.
+- **Synchronization**: Engine waits for parallel paths to converge before validation.
+- **Validation**: Execution of generated tests against the new implementation.
+- **Governance**: Human approval checkpoint before final release.
+- **Decision Lineage**: Full audit trail of all agent and human decisions.
 
 ### 2. Brownfield
 
@@ -112,17 +110,19 @@ Only explicitly configured source or test roots may be read or modified. Attempt
 
 This prevents an implementation agent from freely modifying areas such as orchestration internals, repository metadata, or unrelated application code.
 
-### Human Approval and Rollback
+### Human Approval and Rollback Control
 
 Workflow nodes can require an approval gate before downstream execution proceeds.
 
 If an approval is rejected and the node is configured with a reversible `RollbackPolicy`, the engine invokes a **Rollback Compensation Hook** (`NodeExecutor.rollback`) to programmatically undo side effects.
 
-Approval decisions and rollback actions are captured through the workflow's existing decision and audit mechanisms.
+Approval decisions and rollback actions are captured through the workflow's existing decision lineage and audit mechanisms.
 
 ### Bounded Replanning and Fallback
 
-The engine supports governed recovery through **Bounded Replanning**. If an exit gate fails or retries are exhausted, the engine can trigger a replan that re-opens upstream dependencies, effectively "falling back" to a stable state to attempt a fix. If recovery is not possible, the system enters a **Safe-Stop** phase to prevent destructive automated progress.
+The engine supports governed recovery through Bounded Replanning. When a node's failure path is configured for TRIGGER_REPLAN, the engine can re-open upstream dependencies and resume execution from an earlier stable stage.
+
+Replanning is bounded to prevent infinite recovery loops. If recovery is not possible or permitted, the system enters a Safe-Stop phase to prevent destructive automated progress.
 
 ### Ambiguity Blocking
 
@@ -141,11 +141,11 @@ Workflow execution records decisions and execution events so that important tran
 
 ### Reliability Metrics
 
-The engine programmatically computes and exposes:
-- **Success Rate**: Terminal node success ratio.
-- **Retry/Rollback Frequency**: Percentage of nodes requiring recovery.
-- **MTTR**: Recovery delay proxy (average time spent in retry/rollback transitions).
-- **E2E Latency**: Full wall-clock workflow duration.
+The engine programmatically computes and exposes key metrics to measure orchestration health:
+- **Success Rate**: The ratio of completed nodes to total terminal nodes (completed + failed) within a workflow execution.
+- **Retry/Rollback Frequency**: The percentage of unique nodes that required at least one retry or triggered a rollback state.
+- **MTTR (Mean Time To Recovery)**: A **Recovery Delay Proxy** measuring the average delay (wait time) introduced by retry policies and rollback transitions.
+- **E2E Latency**: The total wall-clock duration of the workflow execution from start to finish.
 
 ---
 
@@ -216,35 +216,32 @@ Live-agent tests are skipped unless explicitly enabled.
 
 Live tests require access to an OpenAI-compatible model endpoint.
 
-Configure:
+**Environment Setup**:
 
 ```bash
+# Required for live tests
 export LLM_BASE_URL="<openai-compatible-base-url>"
 export LLM_MODEL="<model-name>"
 export LLM_API_KEY="<api-key>"
-```
 
-Then enable live tests:
-
-```bash
+# Must be set to true to enable live test execution
 export LIVE_AGENT_TESTS=true
 ```
 
-For example, run the live ambiguity scenario with:
+Run specific scenarios:
 
 ```bash
-LIVE_AGENT_TESTS=true \
+# Run the live ambiguity scenario
 ./mvnw -Dtest=LiveAmbiguityAssessmentTest test
-```
 
-A live clarified-requirement assessment can be run with:
-
-```bash
-LIVE_AGENT_TESTS=true \
+# Run the live clarified-requirement scenario
 ./mvnw -Dtest=LiveClarifiedRequirementAssessmentTest test
+
+# Run all live orchestration scenarios
+./mvnw -Dtest=com.cs.urlshortenerorchestrator.analytics.orchestration.* test
 ```
 
-Credentials must be provided through environment variables and must not be committed to the repository.
+Credentials must be provided through environment variables and must not be committed to the repository. The engine uses these to authenticate with the configured LLM provider.
 
 ---
 
@@ -283,9 +280,9 @@ The orchestration engine and target application use Java 21 and Spring Boot, kee
 
 ### Explicit Orchestration Model
 
-Workflow state, nodes, artifacts, approvals, decisions, retries, and execution behavior are represented explicitly in the application rather than being hidden behind an external orchestration framework.
+Workflow state, nodes, entry/exit gates, artifacts, approvals, decision lineage, sequential/parallel paths, and bounded replanning behavior are represented explicitly in the application.
 
-This makes workflow behavior inspectable and allows domain-specific governance rules to remain under application control.
+This makes workflow behavior inspectable and allows domain-specific governance rules to remain under application control. The engine handles synchronization between parallel paths (e.g., waiting for both implementation and testing to complete before validation).
 
 The trade-offs and possible use of an agent orchestration framework such as LangGraph are discussed separately in the project's design documentation.
 
@@ -303,15 +300,13 @@ This repository is a prototype intended to demonstrate agentic SDLC architecture
 
 It demonstrates:
 
-- deterministic workflow orchestration
-- LLM-backed engineering agents
-- greenfield development
-- brownfield impact analysis and modification
-- ambiguous-requirement detection
-- human approval checkpoints
-- bounded filesystem access
-- artifact propagation
-- testing and validation
-- decision and execution auditability
+- sequential/parallel paths with synchronization
+- bounded retries, fallback (replanning), rollback compensation and safe-stop
+- policy guardrails
+- audit/traceability via decision lineage
+- reliability metrics including success rate, retry/rollback frequency, MTTR and E2E latency
+- dynamic replanning
+- controlled agent autonomy with human oversight
+- greenfield, brownfield and ambiguous requirement scenarios
 
 It is not intended to represent a complete production SDLC platform. Production adoption would require additional consideration around areas such as persistent workflow state, distributed execution, authentication and authorization, secrets management, production observability, model cost controls, and operational recovery.
