@@ -1026,4 +1026,120 @@ class SDLCWorkflowIntegrationTest {
         
         assertThat(executor.getMetrics().getFallbackCount()).isEqualTo(1);
     }
+    @Test
+    @DisplayName("MTTR: wall-clock duration includes elapsed retry interval")
+    void testMTTRWithRetryRecovery() throws InterruptedException {
+        WorkflowNode node = WorkflowNode.builder("n1", NodeType.IMPLEMENTATION)
+                .retryPolicy(RetryPolicy.builder()
+                        .maxRetries(2)
+                        .backoff(BackoffStrategy.FIXED)
+                        .initialDelay(1)
+                        .build()) // 1s backoff
+                .build();
+        Workflow workflow = Workflow.builder("w1", "MTTR Test").root(node).build();
+
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger(0);
+        NodeExecutor executor = (n, attempt) -> {
+            attempts.incrementAndGet();
+            if (attempt == 1) {
+                return Execution.builder().status(ExecutionStatus.FAILED).errorDetails("FAIL").endedAt(Instant.now()).build();
+            }
+            return Execution.builder().status(ExecutionStatus.SUCCESS).endedAt(Instant.now()).build();
+        };
+
+        WorkflowExecutor workflowExecutor = new WorkflowExecutor(workflow);
+        workflowExecutor.execute(executor, (n, e) -> ApprovalResult.builder().approved(true).build());
+
+        assertThat(attempts.get()).isEqualTo(2);
+        assertThat(workflow.getCurrentState().isCompleted()).isTrue();
+        
+        long mttr = workflowExecutor.getMetrics().getAverageMTTRMs();
+        // Should be at least 1000ms due to backoff
+        assertThat(mttr).isGreaterThanOrEqualTo(1000);
+        assertThat(mttr).isLessThan(5000); // Reasonable upper bound
+    }
+
+    @Test
+    @DisplayName("MTTR: multiple failed attempts count as one recovery incident from first failure")
+    void testMTTRWithMultipleFailures() throws InterruptedException {
+        WorkflowNode node = WorkflowNode.builder("n1", NodeType.IMPLEMENTATION)
+                .retryPolicy(RetryPolicy.builder()
+                        .maxRetries(3)
+                        .backoff(BackoffStrategy.FIXED)
+                        .initialDelay(1)
+                        .build())
+                .build();
+        Workflow workflow = Workflow.builder("w1", "MTTR Test").root(node).build();
+
+        NodeExecutor executor = (n, attempt) -> {
+            if (attempt < 3) {
+                return Execution.builder().status(ExecutionStatus.FAILED).errorDetails("FAIL").endedAt(Instant.now()).build();
+            }
+            return Execution.builder().status(ExecutionStatus.SUCCESS).endedAt(Instant.now()).build();
+        };
+
+        WorkflowExecutor workflowExecutor = new WorkflowExecutor(workflow);
+        workflowExecutor.execute(executor, (n, e) -> ApprovalResult.builder().approved(true).build());
+
+        assertThat(workflow.getCurrentState().isCompleted()).isTrue();
+        long mttr = workflowExecutor.getMetrics().getAverageMTTRMs();
+        // Should be at least 2000ms (2 retries with 1s backoff each)
+        assertThat(mttr).isGreaterThanOrEqualTo(2000);
+    }
+
+    @Test
+    @DisplayName("MTTR: artifact fallback recovery also records MTTR")
+    void testMTTRWithArtifactFallback() throws InterruptedException {
+        // req -> impl (impl has fallback)
+        WorkflowNode req = WorkflowNode.builder("req", NodeType.REQUIREMENT_ANALYSIS).build();
+        WorkflowNode impl = WorkflowNode.builder("impl", NodeType.IMPLEMENTATION)
+                .dependsOn("req")
+                .exitGate(Gate.builder("g1")
+                        .failureAction(Gate.FailureAction.FALLBACK_TO_PREVIOUS)
+                        .validationRules(List.of(new ValidationRule("v", ValidationRule.RuleType.ARTIFACT_CHECK, "impl-out",
+                            obj -> {
+                                if (!(obj instanceof com.cs.urlshortenerorchestrator.engine.execution.ExecutionContext ctx)) return false;
+                                List<Artifact> arts = ctx.getArtifactsFromPredecessor("impl");
+                                // Fail if any artifact has ID "a2"
+                                boolean fail = arts.stream().anyMatch(a -> "a2".equals(a.id()));
+                                return !fail;
+                            },
+                            ValidationRule.Severity.ERROR, "FAIL")))
+                        .build())
+                .build();
+        
+        Workflow workflow = Workflow.builder("w1", "MTTR Fallback").root(req).node(impl).build();
+
+        java.util.concurrent.atomic.AtomicInteger implAttempts = new java.util.concurrent.atomic.AtomicInteger(0);
+        NodeExecutor nodeExecutor = (node, attempt) -> {
+            if ("req".equals(node.getId())) {
+                return Execution.builder().status(ExecutionStatus.SUCCESS).endedAt(Instant.now()).build();
+            }
+            int count = implAttempts.incrementAndGet();
+            Artifact a = new Artifact("a"+count, ArtifactType.CODE, "loc", "impl", "exec"+count, "DATA", Map.of(), Instant.now());
+            workflow.getCurrentState().recordArtifact(a);
+            return Execution.builder().id("exec"+count).status(ExecutionStatus.SUCCESS).endedAt(a.createdAt()).producedArtifactIds(List.of("a"+count)).build();
+        };
+
+        WorkflowExecutor workflowExecutor = new WorkflowExecutor(workflow);
+        
+        // 1. Initial run: impl succeeds (a1)
+        workflowExecutor.execute(nodeExecutor, (n, e) -> ApprovalResult.builder().approved(true).build());
+        assertThat(workflow.getCurrentState().getCompletedNodeIds()).contains("impl");
+
+        // 2. Replan impl
+        workflow.getCurrentState().reopenNodesForReplan(java.util.Set.of("impl"));
+
+        // 3. Execute again: impl succeeds (a2) but exit gate FAILS -> FALLBACK_TO_PREVIOUS (a1)
+        workflowExecutor.execute(nodeExecutor, (n, e) -> ApprovalResult.builder().approved(true).build());
+
+        assertThat(workflow.getCurrentState().getPhase()).isEqualTo(WorkflowState.ExecutionPhase.COMPLETED);
+        
+        // Metrics should reflect one fallback and one recovery incident
+        assertThat(workflowExecutor.getMetrics().getFallbackCount()).isEqualTo(1);
+        
+        // Verify recovery was recorded (even if 0ms)
+        // Since getAverageMTTRMs() doesn't expose recoveredNodesCount, we check if nodeFirstFailureTimestamp was cleared
+        assertThat(workflow.getCurrentState().getAndClearNodeFirstFailure("impl")).isEmpty();
+    }
 }

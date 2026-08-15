@@ -32,6 +32,7 @@ public class WorkflowState {
     private Instant completedAt;
     private final Map<String, Artifact> artifacts = Collections.synchronizedMap(new HashMap<>());
     private final Map<String, List<String>> nodeToArtifactIds = Collections.synchronizedMap(new HashMap<>());
+    private final Map<String, Instant> nodeFirstFailureTimestamps = Collections.synchronizedMap(new HashMap<>());
 
     public enum ExecutionPhase {
         RUNNING, WAITING_FOR_APPROVAL, WAITING_FOR_RETRY,
@@ -121,6 +122,14 @@ public class WorkflowState {
                 return artifact != null && executionId.equals(artifact.producedByExecutionId());
             });
         }
+    }
+
+    public void recordNodeFirstFailure(String nodeId, Instant failedAt) {
+        nodeFirstFailureTimestamps.putIfAbsent(nodeId, failedAt);
+    }
+
+    public java.util.Optional<Instant> getAndClearNodeFirstFailure(String nodeId) {
+        return java.util.Optional.ofNullable(nodeFirstFailureTimestamps.remove(nodeId));
     }
 
     public void reopenNodesForReplan(Set<String> nodeIds) {
